@@ -1,0 +1,233 @@
+---
+title: "DATA624 - Project 2"
+author: "Glen Dale Davis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Packages:
+
+```{r packages, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(httr)
+library(readxl)
+library(DataExplorer)
+library(psych)
+library(knitr)
+library(snakecase)
+library(RColorBrewer)
+library(VIM)
+
+```
+
+```{r }
+cur_theme <- theme_set(theme_classic())
+palette <- brewer.pal(n = 12, name = "Paired")
+
+```
+
+## Overview:
+
+New regulations require ABC Beverage to understand our manufacturing process and the predictive factors. We need to be able to report to leadership our predictive model of pH.
+
+We load the historical dataset provided.
+
+```{r historical_data}
+my_url1 <- "https://github.com/geedoubledee/data624_project2/raw/main/StudentData.xlsx"
+temp <- tempfile(fileext = ".xlsx")
+req <- GET(my_url1, authenticate(Sys.getenv("GITHUB_PAT"), ""),
+           write_disk(path = temp))
+main_df <- readxl::read_excel(temp)
+colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
+
+```
+
+We take a look at the distribution for the response variable and a summary of it.
+
+```{r response_distribution}
+annotations <- data.frame(x = c(min(main_df$PH, na.rm = TRUE),
+                                round(median(main_df$PH, na.rm = TRUE), 2),
+                                max(main_df$PH, na.rm = TRUE)),
+                          y = c(20, 340, 20),
+                          label = c("Min:", "Median:", "Max:"))
+p0 <- main_df |>
+    ggplot(aes(x = PH)) +
+    geom_histogram(binwidth = 0.05, color = "#1F78B4", fill = "#A6CEE3") +
+    geom_text(data = annotations,
+              aes(x = x, y = y, label = paste(label, x)),
+              size = 4, fontface = "bold") +
+    scale_x_continuous(limits = c(7.5, 9.5), breaks = seq(7.5, 9.5, 0.5)) +
+    scale_y_continuous(limits = c(0, 350), breaks = seq(0, 350, 25))
+p0
+
+```
+
+```{r response_summary}
+summary(main_df$PH)
+
+```
+
+There are 4 observations with missing PH values. This is a small enough percentage of our total observations to justify simple list-wise deletion. We lose little by removing these observations, and we would gain little by imputing them.
+
+```{r }
+main_df <- main_df |>
+    filter(!is.na(PH))
+
+```
+
+We take a look at the distributions for the numeric predictor variables and a summary of them.
+
+```{r predictors_distributions}
+non_numeric <- c("BRAND_CODE")
+all_numeric <- colnames(main_df |> select(-all_of(c("PH", non_numeric))))
+carb_related <- c("CARB_VOLUME", "CARB_PRESSURE", "CARB_TEMP", "CARB_PRESSURE_1",
+                  "CARB_FLOW", "CARB_REL")
+fill_related <- c("FILL_OUNCES", "FILL_PRESSURE", "FILLER_LEVEL", "FILLER_SPEED",
+                  "OXYGEN_FILLER")
+other <- c("PC_VOLUME", "MNF_FLOW", "TEMPERATURE", "USAGE_CONT", "DENSITY", "MFR",
+           "BALLING", "PRESSURE_VACUUM", "BOWL_SETPOINT", "PRESSURE_SETPOINT",
+           "AIR_PRESSURER", "ALCH_REL", "BALLING_LVL")
+psc_related <- c("PSC", "PSC_FILL", "PSC_CO_2")
+hyd_related <- c("HYD_PRESSURE_1", "HYD_PRESSURE_2", "HYD_PRESSURE_3",
+                 "HYD_PRESSURE_4")
+pivot_df <- main_df |>
+    select(-PH) |>
+    pivot_longer(cols = all_of(all_numeric), names_to = "PREDICTOR",
+                 values_to = "VALUE")
+p1 <- pivot_df |>
+    filter(PREDICTOR %in% carb_related) |>
+    ggplot(aes(x = VALUE)) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    facet_wrap(vars(PREDICTOR), scales = "free_x")
+p1
+
+```
+
+```{r }
+p2 <- pivot_df |>
+    filter(PREDICTOR %in% fill_related) |>
+    ggplot(aes(x = VALUE)) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    facet_wrap(vars(PREDICTOR), scales = "free_x")
+p2
+
+```
+
+```{r }
+p3 <- pivot_df |>
+    filter(PREDICTOR %in% psc_related) |>
+    ggplot(aes(x = VALUE)) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    facet_wrap(vars(PREDICTOR), scales = "free_x")
+p3
+
+```
+
+```{r }
+p4 <- pivot_df |>
+    filter(PREDICTOR %in% hyd_related) |>
+    ggplot(aes(x = VALUE)) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    facet_wrap(vars(PREDICTOR), scales = "free_x")
+p4
+
+```
+
+```{r }
+p5 <- pivot_df |>
+    filter(PREDICTOR %in% other) |>
+    ggplot(aes(x = VALUE)) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    facet_wrap(vars(PREDICTOR), scales = "free_x")
+p5
+
+```
+
+```{r predictors_summary}
+remove <- c("n", "vars", "trimmed", "mad", "range", "se")
+describe <- main_df |>
+    select(all_of(all_numeric)) |>
+    describe() |>
+    select(-all_of(remove))
+knitr::kable(describe, format = "simple")
+
+```
+
+We take a look at a summary of the data completeness. 
+
+```{r introduce_data}
+remove <- c("discrete_columns", "continuous_columns", "total_observations",
+            "memory_usage")
+introduce <- main_df |>
+    introduce() |>
+    select(-all_of(remove))
+knitr::kable(t(introduce), format = "simple")
+
+```
+
+Only 2,038 out of 2,571 rows are complete, which is about 79 percent of observations. There are 844 missing values. None of our variables are completely `NA`.
+
+We take a closer look at where the missing values in the train and test splits are.
+
+```{r missing_values_plot1, include = FALSE}
+p6 <- plot_missing(main_df, missing_only = TRUE,
+                   ggtheme = theme_classic(), title = "Missing Values",
+                   geom_label_args = list("size" = 2,
+                                          "label.padding" = unit(0.1, "lines")))
+
+```
+
+```{r missing_values_plot2, warning = FALSE, message = FALSE}
+p6 <- p6 + 
+    scale_fill_brewer(palette = "Paired")
+p6
+
+```
+
+`MFR`, `Brand Code`, and `Filler Speed` are the predictors with the most missing values, but many other predictors are missing values as well. The response, `PH`, is al missing some values, which we will not impute. Before we impute the missing predictor values, we set a seed and split the dataset into train and test sets. 
+
+```{r train_test_split}
+set.seed(417)
+rows <- sample(nrow(main_df))
+main_df <- main_df[rows, ]
+sample <- sample(c(TRUE, FALSE), nrow(main_df), replace=TRUE,
+                 prob=c(0.7,0.3))
+train_df <- main_df[sample, ]
+train_x <- train_df |>
+    select(-PH)
+train_y <- train_df$PH
+test_df <- main_df[!sample, ]
+test_x <- test_df |>
+    select(-PH)
+test_y <- test_df$PH
+
+```
+
+We impute the missing values in the predictors for the train and test splits separately.
+
+```{r impute_missing_values}
+x <- colSums(is.na(train_df))
+missing_val_cols <- names(x[x > 0])
+#ChemicalManufacturingProcess <- ChemicalManufacturingProcess |>
+    #VIM::kNN(variable = missing_val_cols, k = 15, numFun = weighted.mean,
+             #weightDist = TRUE, imp_var = FALSE)
+
+```
+
+We load the evaluation dataset we will make predictions on.
+
+```{r evaluation_data}
+my_url2 <- "https://github.com/geedoubledee/data624_project2/raw/main/StudentEvaluation.xlsx"
+temp <- tempfile(fileext = ".xlsx")
+req <- GET(my_url2, authenticate(Sys.getenv("GITHUB_PAT"), ""),
+           write_disk(path = temp))
+eval_df <- readxl::read_excel(temp)
+colnames(eval_df) <- to_screaming_snake_case(colnames(eval_df))
+
+```
+
+We build and report the predictive factors in BOTH a technical and non-technical report. The non-technical report will be in a  business-friendly readable document, and the predictions will be in an Excel readable format. The technical report will clearly show the models we tested and how we selected our final approach.
