@@ -32,7 +32,7 @@ palette <- brewer.pal(n = 12, name = "Paired")
 
 ## Overview:
 
-New regulations require ABC Beverage to understand our manufacturing process and the predictive factors. We need to be able to report to leadership our predictive model of pH.
+New regulations require ABC Beverage to understand our manufacturing process and the predictive factors. We need to be able to report to leadership our predictive model of `PH`.
 
 We load the historical dataset provided.
 
@@ -48,7 +48,7 @@ colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
 
 We take a look at the distribution for the response variable and a summary of it.
 
-```{r response_distribution}
+```{r response_distribution, warning = FALSE, message = FALSE}
 annotations <- data.frame(x = c(min(main_df$PH, na.rm = TRUE),
                                 round(median(main_df$PH, na.rm = TRUE), 2),
                                 max(main_df$PH, na.rm = TRUE)),
@@ -81,69 +81,55 @@ main_df <- main_df |>
 
 We take a look at the distributions for the numeric predictor variables and a summary of them.
 
-```{r predictors_distributions}
+```{r predictors_distributions1, warning = FALSE, message = FALSE}
 non_numeric <- c("BRAND_CODE")
 all_numeric <- colnames(main_df |> select(-all_of(c("PH", non_numeric))))
-carb_related <- c("CARB_VOLUME", "CARB_PRESSURE", "CARB_TEMP", "CARB_PRESSURE_1",
-                  "CARB_FLOW", "CARB_REL")
-fill_related <- c("FILL_OUNCES", "FILL_PRESSURE", "FILLER_LEVEL", "FILLER_SPEED",
-                  "OXYGEN_FILLER")
-other <- c("PC_VOLUME", "MNF_FLOW", "TEMPERATURE", "USAGE_CONT", "DENSITY", "MFR",
-           "BALLING", "PRESSURE_VACUUM", "BOWL_SETPOINT", "PRESSURE_SETPOINT",
-           "AIR_PRESSURER", "ALCH_REL", "BALLING_LVL")
-psc_related <- c("PSC", "PSC_FILL", "PSC_CO_2")
-hyd_related <- c("HYD_PRESSURE_1", "HYD_PRESSURE_2", "HYD_PRESSURE_3",
-                 "HYD_PRESSURE_4")
+n = 8
+all_numeric_chunks <- split(all_numeric, ceiling(seq_along(all_numeric)/n))
 pivot_df <- main_df |>
     select(-PH) |>
     pivot_longer(cols = all_of(all_numeric), names_to = "PREDICTOR",
                  values_to = "VALUE")
 p1 <- pivot_df |>
-    filter(PREDICTOR %in% carb_related) |>
+    filter(PREDICTOR %in% all_numeric_chunks[[1]]) |>
     ggplot(aes(x = VALUE)) +
     geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
-    facet_wrap(vars(PREDICTOR), scales = "free_x")
+    facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
+    labs(y = "COUNT")
 p1
 
 ```
 
-```{r }
+```{r predictors_distributions2, warning = FALSE, message = FALSE}
 p2 <- pivot_df |>
-    filter(PREDICTOR %in% fill_related) |>
+    filter(PREDICTOR %in% all_numeric_chunks[[2]]) |>
     ggplot(aes(x = VALUE)) +
     geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
-    facet_wrap(vars(PREDICTOR), scales = "free_x")
+    facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
+    labs(y = "COUNT")
 p2
 
 ```
 
-```{r }
+```{r predictors_distributions3, warning = FALSE, message = FALSE}
 p3 <- pivot_df |>
-    filter(PREDICTOR %in% psc_related) |>
+    filter(PREDICTOR %in% all_numeric_chunks[[3]]) |>
     ggplot(aes(x = VALUE)) +
     geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
-    facet_wrap(vars(PREDICTOR), scales = "free_x")
+    facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
+    labs(y = "COUNT")
 p3
 
 ```
 
-```{r }
+```{r predictors_distributions4, warning = FALSE, message = FALSE}
 p4 <- pivot_df |>
-    filter(PREDICTOR %in% hyd_related) |>
+    filter(PREDICTOR %in% all_numeric_chunks[[4]]) |>
     ggplot(aes(x = VALUE)) +
     geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
-    facet_wrap(vars(PREDICTOR), scales = "free_x")
+    facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
+    labs(y = "COUNT")
 p4
-
-```
-
-```{r }
-p5 <- pivot_df |>
-    filter(PREDICTOR %in% other) |>
-    ggplot(aes(x = VALUE)) +
-    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
-    facet_wrap(vars(PREDICTOR), scales = "free_x")
-p5
 
 ```
 
@@ -188,7 +174,15 @@ p6
 
 ```
 
-`MFR`, `Brand Code`, and `Filler Speed` are the predictors with the most missing values, but many other predictors are missing values as well. The response, `PH`, is al missing some values, which we will not impute. Before we impute the missing predictor values, we set a seed and split the dataset into train and test sets. 
+`MFR`, `BRAND_CODE`, and `FILLER_SPEED` are the predictors with the most missing values, but many other predictors are missing values as well. We coerce `BRAND_CODE` to a factor and add a level for `NA` values to handle missingness for this categorical predictor. We will choose either multiple imputation or knn imputation for the remaining numeric predictors depending on which method performs better on our data. We will also create a secondary version of the data where we perform list-wise deletion instead.
+
+```{r brand_code}
+main_df <- main_df |>
+    mutate(BRAND_CODE = factor(BRAND_CODE, exclude = NULL))
+
+```
+
+Before we impute any missing predictor values or perform list-wise deletion, we set a seed and split the dataset into train and test sets. 
 
 ```{r train_test_split}
 set.seed(417)
@@ -207,14 +201,34 @@ test_y <- test_df$PH
 
 ```
 
-We impute the missing values in the predictors for the train and test splits separately.
+**TK: We impute the missing values in the numeric predictors for the train and test sets separately. First, we check whether multiple imputation or knn imputation performs better on our data using a subset of the data where we've introduced random missingness. By doing this, we can compare imputed values to actual values for both methods and measure their accuracy.**
 
 ```{r impute_missing_values}
-x <- colSums(is.na(train_df))
-missing_val_cols <- names(x[x > 0])
-#ChemicalManufacturingProcess <- ChemicalManufacturingProcess |>
-    #VIM::kNN(variable = missing_val_cols, k = 15, numFun = weighted.mean,
-             #weightDist = TRUE, imp_var = FALSE)
+find_cols_na <- function(df){
+    col_sums_na <- colSums(is.na(df))
+    cols <- names(col_sums_na[col_sums_na > 0])
+    print(paste("Columns with Missing Values:", length(cols)))
+    cols #returns column names vector
+}
+
+
+```
+
+We create secondary train and test sets where all observations with any missing numeric predictor values have been removed. 
+
+```{r list-wise_deletion}
+remove_rows_na <- function(df){
+    na_row_sums <- rowSums(is.na(df))
+    row_has_na <- ifelse(na_row_sums > 0, TRUE, FALSE)
+    copy <- df[!row_has_na, ]
+    print(paste("Rows with Missing Values Removed:",
+                sum(na_row_sums > 0)))
+    copy
+}
+secondary_train_df <- remove_rows_na(train_df)
+secondary_train_x <- remove_rows_na(train_x)
+secondary_test_df <- remove_rows_na(test_df)
+secondary_test_x <- remove_rows_na(test_x)
 
 ```
 
