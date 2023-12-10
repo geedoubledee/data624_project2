@@ -21,6 +21,7 @@ library(knitr)
 library(snakecase)
 library(RColorBrewer)
 library(VIM)
+library(ggcorrplot)
 
 ```
 
@@ -79,7 +80,7 @@ main_df <- main_df |>
 
 ```
 
-We take a look at the distributions for the numeric predictor variables and a summary of them.
+We take a look at histograms for the numeric predictor variables in batches since there are so many of them.
 
 ```{r predictors_distributions1, warning = FALSE, message = FALSE}
 non_numeric <- c("BRAND_CODE")
@@ -93,45 +94,160 @@ pivot_df <- main_df |>
 p1 <- pivot_df |>
     filter(PREDICTOR %in% all_numeric_chunks[[1]]) |>
     ggplot(aes(x = VALUE)) +
-    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_PRESSURE"),
+                   binwidth = 2) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_TEMP"),
+                   binwidth = 2) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_VOLUME"),
+                   binwidth = 0.04) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "FILL_OUNCES"),
+                   binwidth = 0.04) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PC_VOLUME"),
+                   binwidth = 0.02) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PSC"),
+                   binwidth = 0.02) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PSC_CO_2"),
+                   binwidth = 0.02) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PSC_FILL"),
+                   binwidth = 0.04) +
     facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
-    labs(y = "COUNT")
+    labs(y = "COUNT",
+         title = "Batch 1 Predictor Distributions") +
+    theme(panel.spacing.x = unit(4, "mm"),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          plot.title.position = "plot")
 p1
 
 ```
+
+In the first batch of numeric predictors, we see that `PSC`, `PSC_CO_2`, and `PSC_FILL` are all right-skewed, and the distribution for `CARB_VOLUME` is multimodal. The distributions for the rest of the variables are nearly normal.
 
 ```{r predictors_distributions2, warning = FALSE, message = FALSE}
 p2 <- pivot_df |>
     filter(PREDICTOR %in% all_numeric_chunks[[2]]) |>
     ggplot(aes(x = VALUE)) +
-    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_PRESSURE_1"),
+                   binwidth = 2) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "FILL_PRESSURE"),
+                   binwidth = 2) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "FILLER_LEVEL"),
+                   binwidth = 6) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "HYD_PRESSURE_1"),
+                   binwidth = 4) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "HYD_PRESSURE_2"),
+                   binwidth = 4) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "HYD_PRESSURE_3"),
+                   binwidth = 4) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "HYD_PRESSURE_4"),
+                   binwidth = 6) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "MNF_FLOW"),
+                   binwidth = 20) +
     facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
-    labs(y = "COUNT")
+    labs(y = "COUNT",
+         title = "Batch 2 Predictor Distributions") +
+    theme(panel.spacing.x = unit(4, "mm"),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          plot.title.position = "plot")
 p2
 
 ```
+
+In the second batch of numeric predictors, we see that `HYD_PRESSURE_1`, `HYD_PRESSURE_2`, and `HYD_PRESSURE_3` are heavy with zero value observations, skewing their distributions. Most observations for `MNF_FLOW` are around -100, and its distribution might be degenerate. We'll check for degeneracy for this variable and any others shortly. `FILL_PRESSURE` and `FILLER_LEVEL` are multimodal. `HYD_PRESSURE_4` is right-skewed. `CARB_PRESSURE_1` has the only nearly normal distribution here.
 
 ```{r predictors_distributions3, warning = FALSE, message = FALSE}
 p3 <- pivot_df |>
     filter(PREDICTOR %in% all_numeric_chunks[[3]]) |>
     ggplot(aes(x = VALUE)) +
-    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "BALLING"),
+                   binwidth = 0.25) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_FLOW"),
+                   binwidth = 400) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "DENSITY"),
+                   binwidth = 0.1) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "FILLER_SPEED"),
+                   binwidth = 200) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "MFR"),
+                   binwidth = 50) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PRESSURE_VACUUM"),
+                   binwidth = 0.25) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "TEMPERATURE"),
+                   binwidth = 1) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "USAGE_CONT"),
+                   binwidth = 1) +
     facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
-    labs(y = "COUNT")
+    labs(y = "COUNT",
+         title = "Batch 3 Predictor Distributions") +
+    theme(panel.spacing.x = unit(4, "mm"),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          plot.title.position = "plot")
 p3
 
 ```
+
+In the third batch of numeric predictors, we see multimodal distributions for `BALLING`, `CARB_FLOW`, and `DENSITY`. `FILLER_SPEED`, `MFR`, and `USAGE_CONT` are left-skewed, and `TEMPERATURE` and `PRESSURE_VACUUM` are right-skewed.
 
 ```{r predictors_distributions4, warning = FALSE, message = FALSE}
 p4 <- pivot_df |>
     filter(PREDICTOR %in% all_numeric_chunks[[4]]) |>
     ggplot(aes(x = VALUE)) +
-    geom_histogram(color = "#1F78B4", fill = "#A6CEE3") +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "AIR_PRESSURER"),
+                   binwidth = 0.5) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "ALCH_REL"),
+                   binwidth = 0.25) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "BALLING_LVL"),
+                   binwidth = 0.25) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "BOWL_SETPOINT"),
+                   binwidth = 10) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "CARB_REL"),
+                   binwidth = 0.1) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "OXYGEN_FILLER"),
+                   binwidth = 0.02) +
+    geom_histogram(color = "#1F78B4", fill = "#A6CEE3",
+                   data = subset(pivot_df, PREDICTOR == "PRESSURE_SETPOINT"),
+                   bins = 8) +
     facet_wrap(vars(PREDICTOR), ncol = 4, scales = "free_x") +
-    labs(y = "COUNT")
+    labs(y = "COUNT",
+         title = "Batch 4 Predictor Distributions") +
+    theme(panel.spacing.x = unit(4, "mm"),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          plot.title.position = "plot")
 p4
 
 ```
+
+In the last batch of numeric predictors, we see that `AIR_PRESSURER` and `OXYGEN_FILLER` are right-skewed. The distributions for `ALCH_REL`, `BALLING_LVL`, and `PRESSURE_SETPOINT` are multimodal. `BOWL_SETPOINT` is left-skewed. `CARB_REL` is the only variable for which the distribution is nearly normal.
+
+Summary statistics for all numeric predictors are below.
 
 ```{r predictors_summary}
 remove <- c("n", "vars", "trimmed", "mad", "range", "se")
@@ -143,7 +259,7 @@ knitr::kable(describe, format = "simple")
 
 ```
 
-We take a look at a summary of the data completeness. 
+Next we examine the dataset's completeness. 
 
 ```{r introduce_data}
 remove <- c("discrete_columns", "continuous_columns", "total_observations",
@@ -157,10 +273,10 @@ knitr::kable(t(introduce), format = "simple")
 
 Only 2,038 out of 2,571 rows are complete, which is about 79 percent of observations. There are 844 missing values. None of our variables are completely `NA`.
 
-We take a closer look at where the missing values in the train and test splits are.
+We take a closer look at where the missing values are.
 
 ```{r missing_values_plot1, include = FALSE}
-p6 <- plot_missing(main_df, missing_only = TRUE,
+p5 <- plot_missing(main_df, missing_only = TRUE,
                    ggtheme = theme_classic(), title = "Missing Values",
                    geom_label_args = list("size" = 2,
                                           "label.padding" = unit(0.1, "lines")))
@@ -168,13 +284,14 @@ p6 <- plot_missing(main_df, missing_only = TRUE,
 ```
 
 ```{r missing_values_plot2, warning = FALSE, message = FALSE}
-p6 <- p6 + 
-    scale_fill_brewer(palette = "Paired")
-p6
+p5 <- p5 + 
+    scale_fill_brewer(palette = "Paired") +
+    theme(plot.title.position = "plot")
+p5
 
 ```
 
-`MFR`, `BRAND_CODE`, and `FILLER_SPEED` are the predictors with the most missing values, but many other predictors are missing values as well. We coerce `BRAND_CODE` to a factor and add a level for `NA` values to handle missingness for this categorical predictor. We will choose either multiple imputation or knn imputation for the remaining numeric predictors depending on which method performs better on our data. We will also create a secondary version of the data where we perform list-wise deletion instead.
+`MFR`, `BRAND_CODE`, and `FILLER_SPEED` are the predictors with the most missing values, but many other predictors are missing values as well. We coerce `BRAND_CODE` to a factor and add a level for `NA` values to handle missingness for this categorical predictor.
 
 ```{r brand_code}
 main_df <- main_df |>
@@ -182,7 +299,95 @@ main_df <- main_df |>
 
 ```
 
-Before we impute any missing predictor values or perform list-wise deletion, we set a seed and split the dataset into train and test sets. 
+We will choose either multiple imputation or knn imputation for the numeric predictors with missing data depending on which method performs better on our data. We will also create a secondary version of the data where we perform list-wise deletion instead.
+
+Before we handle the remaining missing data, we first look at correlations between our predictors and the response variable. Because we have so many variables, it would be difficult to visualize all correlations at the same time without binning them. So we will bin absolute value correlations into four groups: 1) 0.00 to 0.25, 2) 0.26 to 0.50, 3) 0.51 to 0.75, and 4) 0.76 to 1.00. We won't visualize any correlations less than 0.26, but note that this doesn't imply those correlations are insignificant. Limiting what we examine most closely will simply help us hone in on a) the predictor variables we should expect any good model we develop to include and b) the predictor variables that are so highly correlated with one another that they could inhibit certain models' performance. 
+
+```{r correlation_plot1}
+incl <- c("PH", sort(colnames(main_df |> select(-PH))))
+palette <- brewer.pal(n = 7, name = "RdBu")[c(1, 4, 7)]
+r <- model.matrix(~0+., data = main_df |> select(all_of(incl))) |>
+    cor(use = "pairwise.complete.obs")
+is.na(r) <- abs(r) > 0.5
+is.na(r) <- abs(r) < 0.26
+p7 <- r |>
+    ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2,
+               tl.cex = 8, tl.srt = 90,
+               colors = palette, outline.color = "white") +
+    labs(title = "Correlations Between 0.26 and 0.50 (Absolute Value)") +
+    theme(plot.title.position = "plot")
+p7
+
+```
+
+Here, we see the predictors that are most positively correlated with `PH` are `BOWL_SETPOINT` and `FILLER_LEVEL`, and the predictors that are most negatively correlated with `PH` are `BRAND_CODE` level "C", `FILL_PRESSURE`, `HYD_PRESSURE_3`, `MNF_FLOW`, `PRESSURE_SETPOINT`, and `USAGE_CONT`. While some of the predictors in this plot are moderately correlated with each other, we will focus on higher/more worrisome predictor-predictor correlation levels in the following two plots.
+
+```{r correlation_plot2}
+r <- model.matrix(~0+., data = main_df |> select(all_of(incl))) |>
+    cor(use = "pairwise.complete.obs")
+is.na(r) <- abs(r) > 0.75
+is.na(r) <- abs(r) < 0.51
+p8 <- r |>
+    ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2,
+               tl.cex = 8, tl.srt = 90,
+               colors = palette, outline.color = "white") +
+    labs(title = "Correlations Between 0.51 and 0.75 (Absolute Value)") +
+    theme(plot.title.position = "plot")
+p8
+
+```
+
+Here, we notice immediately that `PH` is missing from the plot and is therefore not correlated with any predictors at a level between 0.51 and 0.75 in absolute value. Although we could comment on all these correlation levels, we see high (> 0.6) positive predictor-predictor correlations between:
+
+* `MNF_FLOW` and `HYD_PRESSURE_2`
+
+* `HYD_PRESSURE_3` and `HYD_PRESSURE_2`
+
+* `HYD_PRESSURE_2` and `HYD_PRESSURE_1`
+
+We also see high (< -0.6) negative predictor-predictor correlations between: 
+
+* `PRESSURE_VACUUM` and `HYD_PRESSURE_3`/`HYD_PRESSURE_2`
+
+* `HYD_PRESSURE_4` and `BRAND_CODE` level "D"/`ALCH_REL`
+
+* `BRAND_CODE` level "B" and `DENSITY`/`BALLING_LVL`/`BALLING`/`ALCH_REL`
+
+```{r correlation_plot3}
+r <- model.matrix(~0+., data = main_df |> select(all_of(incl))) |>
+    cor(use = "pairwise.complete.obs")
+is.na(r) <- abs(r) < 0.76
+p9 <- r |>
+    ggcorrplot(show.diag = FALSE, type = "lower", lab = TRUE, lab_size = 2,
+               tl.cex = 8, tl.srt = 90,
+               colors = palette, outline.color = "white") +
+    labs(title = "Correlations Between 0.76 and 1.00 (Absolute Value)") +
+    theme(plot.title.position = "plot")
+p9
+
+```
+
+`PH` is again missing, so it is therefore not correlated with any predictors at a level between 0.76 and 1.00 in absolute value. Although we could again comment on all these correlation levels, we see extremely high (> 0.9) positive predictor-predictor correlations between
+
+* `MFR` and `FILLER_SPEED`
+
+* `HYD_PRESSURE_3` and `HYD_PRESSURE_2`
+
+* `FILLER_LEVEL` and `BOWL_SETPOINT`
+
+* `DENSITY` and `BALLING_LVL`/`BALLING`/`ALCH_REL`
+
+* `BRAND_CODE` level "D" and `ALCH_REL`
+
+* `BALLING_LVL` and `BALLING`/`ALCH_REL`
+
+* `BALLING` and `ALCH_REL`
+
+There are no extremely high (< -0.9) negative predictor-predictor correlations.
+
+When creating models that are not robust to collinearity later, we will definitely need to exclude one or more variables in each extremely correlated group, and we may have to do the same for less (but still highly) correlated groups as well.
+
+Before we move on to imputing any missing predictor values or performing list-wise deletion, we set a seed and split the dataset into train and test sets. 
 
 ```{r train_test_split}
 set.seed(417)
