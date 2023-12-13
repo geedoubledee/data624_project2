@@ -534,7 +534,7 @@ p10
 
 The variables with variance inflation factors greater than five are `BALLING_LVL`, `BALLING`, `ALCH_REL`, `CARB_PRESSURE`, and `CARB_TEMP`. We remove `ALCH_REL` and `BALLING` from variable importance consideration for imputation because the information these variables provide is largely covered by `BALLING_LVL`, and we remove `CARB_TEMP` from variable importance consideration for imputation in favor of `CARB_PRESSURE`for the same reason.
 
-```{r impute_missing_values1}
+```{r impute_missing_values1, warning = FALSE, message = FALSE}
 rf_model1 <- randomForest(PH ~ . - ALCH_REL - BALLING - CARB_TEMP, data = train_df,
                           importance = TRUE,
                           ntree = 1000,

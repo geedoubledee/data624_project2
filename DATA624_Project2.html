@@ -1249,9 +1249,8 @@ rf_imp1 &lt;- rf_imp1 |&gt;
 colnames(rf_imp1) &lt;- cols
 rf_imp1 &lt;- rf_imp1 |&gt;
     arrange(desc(Importance)) |&gt;
-    top_n(25)</code></pre>
-<pre><code>## Selecting by Importance</code></pre>
-<pre class="r"><code>knitr::kable(rf_imp1, format = &quot;simple&quot;)</code></pre>
+    top_n(25)
+knitr::kable(rf_imp1, format = &quot;simple&quot;)</code></pre>
 <table>
 <thead>
 <tr class="header">
