@@ -1,6 +1,6 @@
 ---
 title: "DATA624 - Project 2"
-author: "Glen Dale Davis"
+author: "Glen Dale Davis & Tora Mullings"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -26,6 +26,8 @@ library(caret)
 library(randomForest)
 library(cowplot)
 library(car)
+library(MASS)
+library(earth)
 
 ```
 
@@ -589,8 +591,61 @@ secondary_test_df <- remove_rows_na(test_df)
 ## Model Building:
 
 ### Linear Regression Models:
+**Adjusted R-squared for linear model with all predictors and missing values included:**
+```{r lm_all_predictors_missing_values}
+lm0 <- lm(PH ~ ., data=primary_train_df)
+summary(lm0)$adj.r.squared
+```
+
+**Adjusted R-squared for linear model with all predictors and no missing values:**
+```{r lm_all_predictors_no_missing_values}
+lm1 <- lm(PH ~ ., data=secondary_train_df)
+summary(lm1)$adj.r.squared
+```
+**Step-wise Predictor selection**
+The mode of the step-wise search is "both" (ie we are seraching for the best model adding predictors one by one, as well as removing one by one)."Better" models are quantified as having lower AIC (Akaikon Information Criterion). Missing values are included for this model.
+```{r}
+lm2 <- stepAIC(lm0, trace=FALSE)
+summary(lm2)
+```
+Step-wise with no missing values:
+```{r}
+lm3 <- stepAIC(lm1, trace=FALSE)
+summary(lm3)
+```
+FILL_OUNCES, PSC, ALCH_REL are among the differences in predictors between the two step-wise linear models. Of the linear models, the step-wise model with no missing values has a higher Adjusted R-squared at 0.43.
+
 
 ### Nonlinear Regression Models:
+
+**Multivariate Adaptive Regression Splines**
+Generalized R-squared of a MARS model with missing values
+```{r}
+mars1 <- earth::earth(PH ~ ., data = primary_train_df)
+mars1$grsq
+```
+Generalized R-squared of a MARS model without missing values
+```{r}
+mars2 <- earth::earth(PH ~ ., data = secondary_train_df)
+mars2$grsq
+```
+The MARS model without missing values performed about 2% better.
+
+**K Nearest Neighbors**
+
+KNN with missing values
+```{r}
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knn1 <- train(PH ~ ., data = primary_train_df, method = "knn", trControl=ctrl, preProcess = c("center","scale"), tuneLength = 20)
+knn1$results
+```
+KNN without missing values
+```{r}
+knn2 <- train(PH ~ ., data = secondary_train_df, method = "knn", trControl=ctrl, preProcess = c("center","scale"), tuneLength = 20)
+knn2$results
+```
+For the knn model that includes missing values, the best value of k is 5. The R-squared is 0.51.
+For the knn model without missing values, the bests value of k is 7. The R-squared is 0.56.
 
 ### Tree Models:
 
