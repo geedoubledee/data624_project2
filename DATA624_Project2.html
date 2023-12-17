@@ -9,9 +9,9 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Glen Dale Davis" />
+<meta name="author" content="Glen Dale Davis &amp; Tora Mullings" />
 
-<meta name="date" content="2023-12-13" />
+<meta name="date" content="2023-12-16" />
 
 <title>DATA624 - Project 2</title>
 
@@ -351,8 +351,8 @@ display: none;
 
 
 <h1 class="title toc-ignore">DATA624 - Project 2</h1>
-<h4 class="author">Glen Dale Davis</h4>
-<h4 class="date">2023-12-13</h4>
+<h4 class="author">Glen Dale Davis &amp; Tora Mullings</h4>
+<h4 class="date">2023-12-16</h4>
 
 </div>
 
@@ -372,7 +372,10 @@ library(ggcorrplot)
 library(caret)
 library(randomForest)
 library(cowplot)
-library(car)</code></pre>
+library(car)
+library(MASS)
+select &lt;- dplyr::select
+library(earth)</code></pre>
 <pre class="r"><code>cur_theme &lt;- theme_set(theme_classic())
 palette &lt;- brewer.pal(n = 12, name = &quot;Paired&quot;)
 greys &lt;- brewer.pal(n = 9, name = &quot;Greys&quot;)</code></pre>
@@ -1393,9 +1396,185 @@ secondary_test_df &lt;- remove_rows_na(test_df)</code></pre>
 <h2>Model Building:</h2>
 <div id="linear-regression-models" class="section level3">
 <h3>Linear Regression Models:</h3>
+<p><strong>Adjusted R-squared for linear model with all predictors and
+missing values included:</strong></p>
+<pre class="r"><code>lm0 &lt;- lm(PH ~ ., data=primary_train_df)
+summary(lm0)$adj.r.squared</code></pre>
+<pre><code>## [1] 0.4120694</code></pre>
+<p><strong>Adjusted R-squared for linear model with all predictors and
+no missing values:</strong></p>
+<pre class="r"><code>lm1 &lt;- lm(PH ~ ., data=secondary_train_df)
+summary(lm1)$adj.r.squared</code></pre>
+<pre><code>## [1] 0.4310702</code></pre>
+<p><strong>Step-wise Predictor selection</strong> The mode of the
+step-wise search is “both” (ie we are seraching for the best model
+adding predictors one by one, as well as removing one by one).”Better”
+models are quantified as having lower AIC (Akaikon Information
+Criterion). Missing values are included for this model.</p>
+<pre class="r"><code>lm2 &lt;- stepAIC(lm0, trace=FALSE)
+summary(lm2)</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = PH ~ BRAND_CODE + CARB_VOLUME + PSC + MNF_FLOW + 
+##     CARB_PRESSURE_1 + HYD_PRESSURE_2 + HYD_PRESSURE_3 + FILLER_LEVEL + 
+##     TEMPERATURE + USAGE_CONT + CARB_FLOW + DENSITY + BALLING + 
+##     PRESSURE_VACUUM + OXYGEN_FILLER + BOWL_SETPOINT + PRESSURE_SETPOINT + 
+##     ALCH_REL + BALLING_LVL, data = primary_train_df)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.52113 -0.07784  0.00982  0.08610  0.42610 
+## 
+## Coefficients:
+##                     Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)        8.973e+00  3.903e-01  22.987  &lt; 2e-16 ***
+## BRAND_CODEB        1.043e-01  2.653e-02   3.933 8.71e-05 ***
+## BRAND_CODEC       -4.523e-02  2.617e-02  -1.728 0.084109 .  
+## BRAND_CODED        6.641e-02  1.838e-02   3.614 0.000310 ***
+## BRAND_CODENA       2.893e-02  2.968e-02   0.975 0.329803    
+## CARB_VOLUME       -1.336e-01  5.285e-02  -2.528 0.011573 *  
+## PSC               -1.347e-01  6.436e-02  -2.093 0.036516 *  
+## MNF_FLOW          -6.775e-04  5.405e-05 -12.534  &lt; 2e-16 ***
+## CARB_PRESSURE_1    6.352e-03  8.181e-04   7.764 1.39e-14 ***
+## HYD_PRESSURE_2    -1.095e-03  5.443e-04  -2.012 0.044384 *  
+## HYD_PRESSURE_3     3.409e-03  6.644e-04   5.131 3.19e-07 ***
+## FILLER_LEVEL      -1.041e-03  6.428e-04  -1.620 0.105416    
+## TEMPERATURE       -1.426e-02  2.670e-03  -5.340 1.05e-07 ***
+## USAGE_CONT        -5.349e-03  1.317e-03  -4.062 5.09e-05 ***
+## CARB_FLOW          1.431e-05  3.823e-06   3.742 0.000188 ***
+## DENSITY           -1.058e-01  3.281e-02  -3.224 0.001287 ** 
+## BALLING           -1.208e-01  2.653e-02  -4.554 5.62e-06 ***
+## PRESSURE_VACUUM   -2.681e-02  8.369e-03  -3.203 0.001383 ** 
+## OXYGEN_FILLER     -2.925e-01  8.991e-02  -3.254 0.001161 ** 
+## BOWL_SETPOINT      3.326e-03  6.649e-04   5.002 6.24e-07 ***
+## PRESSURE_SETPOINT -7.773e-03  1.906e-03  -4.078 4.76e-05 ***
+## ALCH_REL           6.935e-02  2.709e-02   2.560 0.010560 *  
+## BALLING_LVL        1.728e-01  2.753e-02   6.276 4.35e-10 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Residual standard error: 0.1313 on 1754 degrees of freedom
+## Multiple R-squared:  0.4204, Adjusted R-squared:  0.4131 
+## F-statistic: 57.83 on 22 and 1754 DF,  p-value: &lt; 2.2e-16</code></pre>
+<p>Step-wise with no missing values:</p>
+<pre class="r"><code>lm3 &lt;- stepAIC(lm1, trace=FALSE)
+summary(lm3)</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = PH ~ BRAND_CODE + CARB_VOLUME + FILL_OUNCES + CARB_PRESSURE + 
+##     CARB_TEMP + MNF_FLOW + CARB_PRESSURE_1 + HYD_PRESSURE_2 + 
+##     HYD_PRESSURE_3 + HYD_PRESSURE_4 + TEMPERATURE + USAGE_CONT + 
+##     CARB_FLOW + DENSITY + BALLING + PRESSURE_VACUUM + OXYGEN_FILLER + 
+##     BOWL_SETPOINT + PRESSURE_SETPOINT + CARB_REL + BALLING_LVL, 
+##     data = secondary_train_df)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.54066 -0.07215  0.00653  0.08647  0.43003 
+## 
+## Coefficients:
+##                     Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)        1.305e+01  1.437e+00   9.085  &lt; 2e-16 ***
+## BRAND_CODEB        1.792e-01  3.740e-02   4.791 1.83e-06 ***
+## BRAND_CODEC        2.057e-02  3.601e-02   0.571 0.568022    
+## BRAND_CODED        1.079e-01  1.678e-02   6.429 1.74e-10 ***
+## BRAND_CODENA       1.160e-01  4.023e-02   2.883 0.004001 ** 
+## CARB_VOLUME       -3.947e-01  1.363e-01  -2.895 0.003844 ** 
+## FILL_OUNCES       -9.681e-02  4.272e-02  -2.266 0.023594 *  
+## CARB_PRESSURE      1.226e-02  6.420e-03   1.909 0.056421 .  
+## CARB_TEMP         -9.288e-03  5.022e-03  -1.849 0.064594 .  
+## MNF_FLOW          -6.262e-04  5.923e-05 -10.571  &lt; 2e-16 ***
+## CARB_PRESSURE_1    5.918e-03  9.018e-04   6.562 7.36e-11 ***
+## HYD_PRESSURE_2    -1.463e-03  5.835e-04  -2.507 0.012284 *  
+## HYD_PRESSURE_3     3.509e-03  7.331e-04   4.787 1.87e-06 ***
+## HYD_PRESSURE_4     7.270e-04  4.817e-04   1.509 0.131453    
+## TEMPERATURE       -1.874e-02  3.763e-03  -4.981 7.09e-07 ***
+## USAGE_CONT        -6.878e-03  1.480e-03  -4.647 3.68e-06 ***
+## CARB_FLOW          2.013e-05  5.337e-06   3.772 0.000168 ***
+## DENSITY           -1.149e-01  3.567e-02  -3.222 0.001303 ** 
+## BALLING           -1.885e-01  4.217e-02  -4.469 8.45e-06 ***
+## PRESSURE_VACUUM   -4.973e-02  1.111e-02  -4.476 8.22e-06 ***
+## OXYGEN_FILLER     -3.267e-01  1.062e-01  -3.076 0.002139 ** 
+## BOWL_SETPOINT      2.323e-03  3.361e-04   6.911 7.18e-12 ***
+## PRESSURE_SETPOINT -7.642e-03  2.080e-03  -3.673 0.000248 ***
+## CARB_REL           1.090e-01  7.484e-02   1.456 0.145535    
+## BALLING_LVL        3.049e-01  4.850e-02   6.288 4.26e-10 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Residual standard error: 0.1283 on 1448 degrees of freedom
+## Multiple R-squared:  0.4424, Adjusted R-squared:  0.4331 
+## F-statistic: 47.86 on 24 and 1448 DF,  p-value: &lt; 2.2e-16</code></pre>
+<p>FILL_OUNCES, PSC, ALCH_REL are among the differences in predictors
+between the two step-wise linear models. Of the linear models, the
+step-wise model with no missing values has a higher Adjusted R-squared
+at 0.43.</p>
 </div>
 <div id="nonlinear-regression-models" class="section level3">
 <h3>Nonlinear Regression Models:</h3>
+<p><strong>Multivariate Adaptive Regression Splines</strong> Generalized
+R-squared of a MARS model with missing values</p>
+<pre class="r"><code>mars1 &lt;- earth::earth(PH ~ ., data = primary_train_df)
+mars1$grsq</code></pre>
+<pre><code>## [1] 0.4248042</code></pre>
+<p>Generalized R-squared of a MARS model without missing values</p>
+<pre class="r"><code>mars2 &lt;- earth::earth(PH ~ ., data = secondary_train_df)
+mars2$grsq</code></pre>
+<pre><code>## [1] 0.4452059</code></pre>
+<p>The MARS model without missing values performed about 2% better.</p>
+<p><strong>K Nearest Neighbors</strong></p>
+<p>KNN with missing values</p>
+<pre class="r"><code>ctrl &lt;- trainControl(method=&quot;repeatedcv&quot;,repeats = 3) 
+knn1 &lt;- train(PH ~ ., data = primary_train_df, method = &quot;knn&quot;, trControl=ctrl, preProcess = c(&quot;center&quot;,&quot;scale&quot;), tuneLength = 20)
+knn1$results</code></pre>
+<pre><code>##     k      RMSE  Rsquared        MAE      RMSESD RsquaredSD       MAESD
+## 1   5 0.1210190 0.5077160 0.09041480 0.007692803 0.05311684 0.005216766
+## 2   7 0.1203227 0.5129572 0.09090697 0.007614240 0.05437946 0.005365893
+## 3   9 0.1211402 0.5067878 0.09251006 0.007635269 0.05545390 0.005518617
+## 4  11 0.1218617 0.5020730 0.09344699 0.008274703 0.06197180 0.005814792
+## 5  13 0.1223929 0.4983277 0.09407935 0.008009016 0.06069483 0.005832246
+## 6  15 0.1234620 0.4896835 0.09536075 0.007738599 0.05790123 0.005920425
+## 7  17 0.1244735 0.4819488 0.09628523 0.007587700 0.05652577 0.005895991
+## 8  19 0.1252861 0.4755775 0.09686126 0.007450170 0.05672739 0.005833652
+## 9  21 0.1260550 0.4698875 0.09739671 0.007328652 0.05580912 0.005670036
+## 10 23 0.1268626 0.4632686 0.09785015 0.007446063 0.05689723 0.005778785
+## 11 25 0.1273760 0.4590031 0.09831088 0.007417029 0.05642336 0.005707683
+## 12 27 0.1279242 0.4547387 0.09875313 0.007340357 0.05723720 0.005660514
+## 13 29 0.1284111 0.4507985 0.09915531 0.007411504 0.05760406 0.005677733
+## 14 31 0.1291080 0.4447055 0.09979980 0.007278146 0.05672946 0.005558173
+## 15 33 0.1297440 0.4392083 0.10036049 0.007279430 0.05694777 0.005667451
+## 16 35 0.1302029 0.4353581 0.10067379 0.007267559 0.05645076 0.005687862
+## 17 37 0.1305938 0.4323563 0.10092350 0.007184968 0.05630242 0.005544514
+## 18 39 0.1309903 0.4291314 0.10123264 0.007210521 0.05609429 0.005636099
+## 19 41 0.1314458 0.4255725 0.10149659 0.007125009 0.05609822 0.005551930
+## 20 43 0.1318614 0.4220736 0.10184257 0.007225879 0.05751020 0.005636593</code></pre>
+<p>KNN without missing values</p>
+<pre class="r"><code>knn2 &lt;- train(PH ~ ., data = secondary_train_df, method = &quot;knn&quot;, trControl=ctrl, preProcess = c(&quot;center&quot;,&quot;scale&quot;), tuneLength = 20)
+knn2$results</code></pre>
+<pre><code>##     k      RMSE  Rsquared        MAE      RMSESD RsquaredSD       MAESD
+## 1   5 0.1143771 0.5524199 0.08549123 0.009259738 0.05514064 0.006534897
+## 2   7 0.1143672 0.5541766 0.08649048 0.008299311 0.05095771 0.005818019
+## 3   9 0.1151408 0.5486924 0.08780881 0.008930976 0.05443097 0.006151551
+## 4  11 0.1161389 0.5417671 0.08901554 0.009267439 0.05849473 0.006497887
+## 5  13 0.1173533 0.5320168 0.09000779 0.008711463 0.05663163 0.006139681
+## 6  15 0.1184675 0.5234814 0.09124716 0.008671984 0.05546420 0.005992882
+## 7  17 0.1196567 0.5140747 0.09229583 0.008503269 0.05566728 0.005758091
+## 8  19 0.1205587 0.5068085 0.09309436 0.008260696 0.05424687 0.005447394
+## 9  21 0.1210880 0.5032914 0.09327472 0.008277697 0.05348685 0.005671254
+## 10 23 0.1219129 0.4967053 0.09405988 0.008392550 0.05399672 0.005715929
+## 11 25 0.1226662 0.4906081 0.09472520 0.008246657 0.05308477 0.005750855
+## 12 27 0.1235483 0.4832575 0.09542238 0.008220911 0.05244087 0.005702362
+## 13 29 0.1242832 0.4772667 0.09602690 0.007891275 0.05248927 0.005363742
+## 14 31 0.1252014 0.4694019 0.09670552 0.007768071 0.05097481 0.005229042
+## 15 33 0.1260907 0.4619124 0.09720836 0.007784387 0.05098748 0.005275481
+## 16 35 0.1268544 0.4554195 0.09765853 0.007775865 0.04980675 0.005365854
+## 17 37 0.1274474 0.4504840 0.09803606 0.007589225 0.04797425 0.005350412
+## 18 39 0.1280333 0.4452478 0.09841944 0.007492698 0.04729737 0.005256891
+## 19 41 0.1286766 0.4395307 0.09891641 0.007527547 0.04755558 0.005213890
+## 20 43 0.1291203 0.4355804 0.09926446 0.007789113 0.04739336 0.005361321</code></pre>
+<p>For the knn model that includes missing values, the best value of k
+is 5. The R-squared is 0.51. For the knn model without missing values,
+the bests value of k is 7. The R-squared is 0.56.</p>
 </div>
 <div id="tree-models" class="section level3">
 <h3>Tree Models:</h3>

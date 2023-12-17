@@ -1,8 +1,10 @@
 ---
 title: "DATA624 - Project 2"
-author: "Glen Dale Davis"
+author: "Glen Dale Davis & Tora Mullings"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -26,6 +28,10 @@ library(caret)
 library(randomForest)
 library(cowplot)
 library(car)
+library(MASS)
+select <- dplyr::select
+library(earth)
+library(rminer)
 
 ```
 
@@ -40,7 +46,7 @@ greys <- brewer.pal(n = 9, name = "Greys")
 
 New regulations require ABC Beverage to understand our manufacturing process and the predictive factors. We need to be able to report to leadership our predictive model of `PH`.
 
-We load the historical dataset provided.
+We load the historical dataset provided, as well as the evaluation dataset we will later make predictions on.
 
 ```{r historical_data}
 my_url1 <- "https://github.com/geedoubledee/data624_project2/raw/main/StudentData.xlsx"
@@ -49,6 +55,12 @@ req <- GET(my_url1, authenticate(Sys.getenv("GITHUB_PAT"), ""),
            write_disk(path = temp))
 main_df <- readxl::read_excel(temp)
 colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
+my_url2 <- "https://github.com/geedoubledee/data624_project2/raw/main/StudentEvaluation.xlsx"
+temp <- tempfile(fileext = ".xlsx")
+req <- GET(my_url2, authenticate(Sys.getenv("GITHUB_PAT"), ""),
+           write_disk(path = temp))
+eval_df <- readxl::read_excel(temp)
+colnames(eval_df) <- to_screaming_snake_case(colnames(eval_df))
 
 ```
 
@@ -333,17 +345,34 @@ p4b
 
 ```
 
-We see clustering in `AIR_PRESSURER`, `ALCH_REL`, and `BALLING_LVL`. 
+We see clustering in `AIR_PRESSURER`, `ALCH_REL`, and `BALLING_LVL`.
 
 Summary statistics for all numeric predictors are below.
 
 ```{r predictors_summary}
-remove <- c("n", "vars", "trimmed", "mad", "range", "se")
+remove <- c("n", "vars", "trimmed", "mad", "range", "se", "kurtosis")
 describe <- main_df |>
     select(all_of(all_numeric)) |>
     describe() |>
     select(-all_of(remove))
 knitr::kable(describe, format = "simple")
+
+```
+
+Now we check for degenerate distributions.
+
+```{r degenerate}
+nzv_predictors <- nearZeroVar(main_df, names = TRUE, saveMetrics = FALSE)
+nzv_predictors
+
+```
+The only near-zero-variance predictor identified is `HYD_PRESSURE_1`. We remove this predictor from the historical and evaluation datasets.
+
+```{r }
+main_df <- main_df |>
+    select(-all_of(nzv_predictors))
+eval_df <- eval_df |>
+    select(-all_of(nzv_predictors))
 
 ```
 
@@ -551,7 +580,7 @@ knitr::kable(rf_imp1, format = "simple")
 
 ```
 
-The above variables become the distance variables, and their variable importance scores become the weights in our KNN imputation.
+The above variables become the distance variables, and their variable importance scores become the weights in our KNN imputation. We perform said imputation on the primary train and test sets. 
 
 ```{r impute_missing_values2}
 dist_vars = rf_imp1$Predictor
@@ -572,7 +601,7 @@ primary_test_df <- test_df |>
 
 ```
 
-Then we create secondary train and test sets where all observations with missing numeric values have been deleted.
+Then we create secondary train and test sets where observations with missing numeric values have been deleted.
 
 ```{r list-wise_deletion}
 remove_rows_na <- function(df){
@@ -586,30 +615,606 @@ secondary_test_df <- remove_rows_na(test_df)
 
 ```
 
-## Model Building:
+Finally, we create tertiary train and test sets where all observations with missing numeric values have been imputed and skewed predictors (excluding `PRESSURE_VACUUM` since it takes negative values) have been transformed. Below is a breakdown of the ideal lambdas proposed by Box-Cox for these skewed predictors and the reasonable, more commonly understood transformations we will make instead:
 
-### Linear Regression Models:
-
-### Nonlinear Regression Models:
-
-### Tree Models:
-
-## Final Model Selection:
-
-## Final Model Evaluation:
-
-We load the evaluation dataset we will make predictions on.
-
-```{r evaluation_data}
-my_url2 <- "https://github.com/geedoubledee/data624_project2/raw/main/StudentEvaluation.xlsx"
-temp <- tempfile(fileext = ".xlsx")
-req <- GET(my_url2, authenticate(Sys.getenv("GITHUB_PAT"), ""),
-           write_disk(path = temp))
-eval_df <- readxl::read_excel(temp)
-colnames(eval_df) <- to_screaming_snake_case(colnames(eval_df))
+```{r transformations1}
+tertiary_train_df <- primary_train_df
+tertiary_test_df <- primary_test_df
+skewed <- c("PSC", "PSC_CO_2", "PSC_FILL", "HYD_PRESSURE_4", "FILLER_SPEED",
+            "MFR", "TEMPERATURE", "USAGE_CONT", "AIR_PRESSURER",
+            "BOWL_SETPOINT", "OXYGEN_FILLER")
+for (i in 1:(length(skewed))){
+    #Add a small constant to columns with any 0 values
+    if (sum(tertiary_train_df[[skewed[i]]] == 0) > 0){
+        tertiary_train_df[[skewed[i]]] <-
+            tertiary_train_df[[skewed[i]]] + 0.001
+    }
+}
+for (i in 1:(length(skewed))){
+    if (i == 1){
+        lambdas <- c()
+    }
+    bc <- boxcox(lm(tertiary_train_df[[skewed[i]]] ~ 1),
+                 lambda = seq(-2, 2, length.out = 81),
+                 plotit = FALSE)
+    lambda <- bc$x[which.max(bc$y)]
+    lambdas <- append(lambdas, lambda)
+}
+lambdas <- as.data.frame(cbind(skewed, lambdas))
+adj <- c("square root", "square root", "square root", "none", "square",
+         "square", "inverse square", "square", "inverse square", "square",
+         "log")
+lambdas <- cbind(lambdas, adj)
+cols <- c("Variable", "Ideal Lambda Proposed by Box-Cox", "Reasonable Alternative Transformation")
+colnames(lambdas) <- cols
+kable(lambdas, format = "simple")
 
 ```
 
-We build and report the predictive factors in BOTH a technical and non-technical report. The non-technical report will be in a  business-friendly readable document, and the predictions will be in an Excel readable format. The technical report will clearly show the models we tested and how we selected our final approach.
+We make the transformations in the tertiary train and test sets, leaving in the lower order terms for anything we squared, but removing the original terms otherwise. 
 
-## Conclusions:
+```{r transformations2}
+remove <- c("PSC", "PSC_CO_2", "PSC_FILL", "TEMPERATURE", "AIR_PRESSURER",
+            "OXYGEN_FILLER")
+tertiary_train_df <- tertiary_train_df |>
+    mutate(sqrt_PSC = PSC^0.5,
+           sqrt_PSC_CO_2 = PSC_CO_2^0.5,
+           sqrt_PSC_FILL = PSC_FILL^0.5,
+           FILLER_SPEED_sq = FILLER_SPEED^2,
+           MFR_sq = MFR^2,
+           inv_sq_TEMPERATURE = TEMPERATURE^-2,
+           USAGE_CONT_sq = USAGE_CONT^2,
+           inv_sq_AIR_PRESSURER = AIR_PRESSURER^-2,
+           BOWL_SETPOINT_sq = BOWL_SETPOINT^2,
+           log_OXYGEN_FILLER = log(OXYGEN_FILLER)) |>
+    select(-all_of(remove))
+for (i in 1:(length(skewed))){
+    #Add a small constant to columns with any 0 values
+    if (sum(tertiary_test_df[[skewed[i]]] == 0) > 0){
+        tertiary_test_df[[skewed[i]]] <-
+            tertiary_test_df[[skewed[i]]] + 0.001
+    }
+}
+tertiary_test_df <- tertiary_test_df |>
+    mutate(sqrt_PSC = PSC^0.5,
+           sqrt_PSC_CO_2 = PSC_CO_2^0.5,
+           sqrt_PSC_FILL = PSC_FILL^0.5,
+           FILLER_SPEED_sq = FILLER_SPEED^2,
+           MFR_sq = MFR^2,
+           inv_sq_TEMPERATURE = TEMPERATURE^-2,
+           USAGE_CONT_sq = USAGE_CONT^2,
+           inv_sq_AIR_PRESSURER = AIR_PRESSURER^-2,
+           BOWL_SETPOINT_sq = BOWL_SETPOINT^2,
+           log_OXYGEN_FILLER = log(OXYGEN_FILLER)) |>
+    select(-all_of(remove))
+
+```
+
+## Model Building:
+
+We build a few models in each of three regression categories: linear, nonlinear, and tree-based.
+
+### Linear Regression Models:
+
+We start with **Model LM:1**, a linear model that includes all predictors and uses the primary training set (in which missing numeric values have been imputed). The Adjusted R-Squared for the full model is:
+
+```{r lm1_full}
+lm1 <- lm(PH ~ ., data=primary_train_df)
+summary(lm1)$adj.r.squared
+
+```
+
+We reduce **Model LM:1** via step-wise AIC (Akaike Information Criterion) selection in both directions. A summary of the reduced model is below. 
+
+```{r lm1_reduced}
+lm1 <- stepAIC(lm1, direction = "both", trace=FALSE)
+summary(lm1)
+
+```
+
+The Adjusted R-Squared increased very slightly to 0.4131. 
+
+Next we build **Model LM:2**, a linear model that includes all predictors and uses the secondary training set (in which observations with missing numeric values have been deleted). The Adjusted R-Squared for the full model is:
+
+```{r lm2_full}
+lm2 <- lm(PH ~ ., data=secondary_train_df)
+summary(lm2)$adj.r.squared
+
+```
+
+We reduce **Model LM:2** using step-wise AIC selection in both directions again. A summary of the reduced model is below. 
+
+```{r lm2_reduced}
+lm2 <- stepAIC(lm2, direction = "both", trace=FALSE)
+summary(lm2)
+
+```
+
+The Adjusted R-Squared increased very slightly to 0.4331. 
+
+Next we build **Model LM:3**, a linear model that uses the tertiary training set (in which observations with missing numeric values have been imputed and skewed predictors have been transformed). The Adjusted R-Squared for the full model is:
+
+```{r lm3_full}
+lm3 <- lm(PH ~ ., data=tertiary_train_df)
+summary(lm3)$adj.r.squared
+
+```
+
+We reduce **Model LM:3** using step-wise AIC selection in both directions again. A summary of the reduced model is below. (Note that `BOWL_SETPOINT`, which we squared during transformation, had to be manually added back to the model. If we had done the transformations within the model itself, the model would have kept all lower order terms by default during reduction, but since we transformed the data outside the model, we have to be more careful.) 
+
+```{r lm3_reduced}
+lm3 <- stepAIC(lm3, direction = "both", trace=FALSE)
+lm3 <- update(lm3, . ~ . + BOWL_SETPOINT)
+summary(lm3)
+
+```
+
+The Adjusted R-Squared increased very slightly to 0.4165. 
+
+Looking at the significant predictors in the three linear models, there are some differences to note. `FILL_OUNCES` was deemed significant in only **Model LM:2**, and `PSC` and `ALCH_REL` was deemed significant in only **Model LM:1**.
+
+**TK: Any notes on Model LM:3?*
+
+We examine diagnostic plots for the three linear models. 
+
+```{r lm_diagnostics1}
+par(mfrow = c(1, 3))
+plot(lm1, 1, main = "Model LM:1")
+plot(lm2, 1, main = "Model LM:2")
+plot(lm3, 1, main = "Model LM:3")
+
+```
+
+There's a bit of a sigmoid pattern in the red line in the Residuals vs. Fitted Values plots for all three linear models, suggesting they share a fit issue. 
+
+```{r lm_diagnostics1}
+par(mfrow = c(1, 3))
+plot(lm1, 2, main = "Model LM:1")
+plot(lm2, 2, main = "Model LM:2")
+plot(lm3, 2, main = "Model LM:3")
+
+```
+
+The Q-Q plots diverge from the normal line at the low-end for all three linear models. 
+
+```{r lm_diagnostics1}
+par(mfrow = c(1, 3))
+plot(lm1, 5, main = "Model LM:1")
+plot(lm2, 5, main = "Model LM:2")
+plot(lm3, 5, main = "Model LM:3")
+
+```
+
+There are no points beyond the border of Cook's distance in any of the linear models, so there are no highly influential observations to investigate.
+
+We check for multicollinearity in the three linear models. (Only variance inflation factors greater than 4 are displayed for readability.)
+
+```{r multicollinearity1}
+palette <- brewer.pal(n = 12, name = "Paired")
+lm1_vif <- as.data.frame(vif(lm1)) |>
+    rownames_to_column()
+lm2_vif <- as.data.frame(vif(lm2)) |>
+    rownames_to_column()
+lm3_vif <- as.data.frame(vif(lm3)) |>
+    rownames_to_column()
+cols <- c("PREDICTOR", "GVIF", "DF", "GVIF_ADJ_BY_DF")
+colnames(lm1_vif) <- cols
+colnames(lm2_vif) <- cols
+colnames(lm3_vif) <- cols
+p11a <- lm1_vif |>
+    filter(GVIF_ADJ_BY_DF > 4) |>
+    ggplot() +
+    geom_col(aes(x = reorder(PREDICTOR, GVIF_ADJ_BY_DF), y = GVIF_ADJ_BY_DF),
+             color = palette[2], fill = palette[1]) +
+    geom_abline(intercept = 5, slope = 0, linewidth = 1, linetype = 2,
+                color = palette[6]) +
+    labs(x = "PREDICTOR",
+         y = "Variance Inflation Factor",
+         title = "Model LM:1") +
+    scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, 2.5)) +
+    coord_flip()
+p11b <- lm2_vif |>
+    filter(GVIF_ADJ_BY_DF > 4) |>
+    ggplot() +
+    geom_col(aes(x = reorder(PREDICTOR, GVIF_ADJ_BY_DF), y = GVIF_ADJ_BY_DF),
+             color = palette[2], fill = palette[1]) +
+    geom_abline(intercept = 5, slope = 0, linewidth = 1, linetype = 2,
+                color = palette[6]) +
+    labs(x = "PREDICTOR",
+         y = "Variance Inflation Factor",
+         title = "Model LM:2") +
+    scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, 2.5)) +
+    coord_flip()
+p11c <- lm3_vif |>
+    filter(GVIF_ADJ_BY_DF > 4) |>
+    ggplot() +
+    geom_col(aes(x = reorder(PREDICTOR, GVIF_ADJ_BY_DF), y = GVIF_ADJ_BY_DF),
+             color = palette[2], fill = palette[1]) +
+    geom_abline(intercept = 5, slope = 0, linewidth = 1, linetype = 2,
+                color = palette[6]) +
+    labs(x = "PREDICTOR",
+         y = "Variance Inflation Factor",
+         title = "Model LM:3") +
+    scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, 2.5)) +
+    coord_flip()
+p11 <- plot_grid(p11a, p11b, p11c, ncol = 1, align = "v", axis = "l")
+p11
+
+```
+
+There are different multicollinearity issues in each model. In **Model LM:1**, we remove `BALLING` and `ALCH_REL` because their information is largely covered by `BALLING_LVL`, as discussed previously. The same reasoning applies to removing `BALLING` in favor of `BALLING_LVL` and `CARB_TEMP` in favor of `CARB_PRESSURE` in **Model LM:2**. In **Model LM:3**, we expect issues from including lower and higher order terms, but that is what we want to do, so those can be ignored. We only remove `BALLING` and `ALCH_REL`. After these adjustments, the final Adjusted R-Squared metrics for the three linear models are below:
+
+```{r multicollinearity2}
+lm1 <- update(lm1, . ~ . - BALLING - ALCH_REL)
+lm2 <- update(lm2, . ~ . - BALLING - CARB_TEMP)
+lm3 <- update(lm3, . ~ . - BALLING - ALCH_REL)
+lms <- c("Model LM:1", "Model LM:2", "Model LM:3")
+rsq <- c(summary(lm1)$adj.r.squared, summary(lm2)$adj.r.squared,
+         summary(lm3)$adj.r.squared)
+summ <- as.data.frame(cbind(lms, round(rsq, 4)))
+cols <- c("Model", "Adjust R-Squared")
+colnames(summ) <- cols
+knitr::kable(summ, format = "simple")
+
+```
+
+### Nonlinear Regression Models:
+
+Next we build three versions of three types of nonlinear regression models, training each version on one of the three different training sets. 
+
+First, we tune three Multivariate Adaptive Regression Spline (MARS) models. 
+
+```{r warning = FALSE, message = FALSE}
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:20)
+mars1 <- train(primary_train_df |> select(-PH), primary_train_df$PH,
+                   method = "earth",
+                   tuneGrid = marsGrid,
+                   trControl = trainControl(method = "cv"))
+mars2 <- train(secondary_train_df |> select(-PH), secondary_train_df$PH,
+                   method = "earth",
+                   tuneGrid = marsGrid,
+                   trControl = trainControl(method = "cv"))
+mars3 <- train(tertiary_train_df |> select(-PH), tertiary_train_df$PH,
+                   method = "earth",
+                   tuneGrid = marsGrid,
+                   trControl = trainControl(method = "cv"))
+
+```
+
+A summary of the ideal tuning parameters and Generalized R-Squared values for the three MARS models is below:
+
+```{r }
+mars_mods <- c("Model MARS:1", "Model MARS:2", "Model MARS:3")
+nprune <- c(mars1$bestTune$nprune, mars2$bestTune$nprune, mars3$bestTune$nprune)
+degree <- c(mars1$bestTune$degree, mars2$bestTune$degree, mars3$bestTune$degree)
+grsq <- c(mars1$finalModel$grsq, mars2$finalModel$grsq, mars3$finalModel$grsq)
+summ <- as.data.frame(cbind(mars_mods, nprune, degree, round(grsq, 4)))
+cols <- c("Model", "nprune", "degree", "Generalized R-Squared")
+colnames(summ) <- cols
+knitr::kable(summ, format = "simple")
+
+```
+
+And here are summaries of the estimated feature importance for the ten most important features in each of these MARS models:
+
+```{r }
+mars1_feature_importance <- varImp(mars1, method = "gcv")
+mars1_feature_importance <- mars1_feature_importance$importance |>
+    arrange(desc(Overall)) |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model MARS:1 Importance")
+colnames(mars1_feature_importance) <- cols
+knitr::kable(mars1_feature_importance, format = "simple")
+
+```
+
+```{r }
+mars2_feature_importance <- varImp(mars2, method = "gcv")
+mars2_feature_importance <- mars2_feature_importance$importance |>
+    arrange(desc(Overall)) |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model MARS:2 Importance")
+colnames(mars2_feature_importance) <- cols
+knitr::kable(mars2_feature_importance, format = "simple")
+
+```
+
+```{r }
+mars3_feature_importance <- varImp(mars3, method = "gcv")
+mars3_feature_importance <- mars3_feature_importance$importance |>
+    arrange(desc(Overall)) |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model MARS:3 Importance")
+colnames(mars3_feature_importance) <- cols
+knitr::kable(mars3_feature_importance, format = "simple")
+
+```
+
+**TK: Compare Differences**
+
+Next, we tune three K Nearest Neighbors (KNN) models.
+
+```{r }
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knn1 <- train(PH ~ ., data = primary_train_df, method = "knn", trControl=ctrl, preProcess = c("center","scale"), tuneLength = 20)
+knn2 <- train(PH ~ ., data = secondary_train_df, method = "knn", trControl=ctrl, preProcess = c("center","scale"), tuneLength = 20)
+knn3 <- train(PH ~ ., data = tertiary_train_df, method = "knn", trControl=ctrl, preProcess = c("center","scale"), tuneLength = 20)
+
+```
+
+A summary of the ideal k and R-Squared values for the three KNN models is below:
+
+```{r }
+knn_mods <- c("Model KNN:1", "Model KNN:2", "Model KNN:3")
+k <- c(knn1$bestTune$k, knn2$bestTune$k, knn3$bestTune$k)
+rsq <- c(knn1$results |> filter(k == knn1$bestTune$k) |> select(Rsquared) |> as.numeric(),
+         knn2$results |> filter(k == knn2$bestTune$k) |> select(Rsquared) |> as.numeric(),
+         knn3$results |> filter(k == knn3$bestTune$k) |> select(Rsquared) |> as.numeric())
+summ <- as.data.frame(cbind(knn_mods, k, round(rsq, 4)))
+cols <- c("Model", "k", "R-Squared")
+colnames(summ) <- cols
+knitr::kable(summ, format = "simple")
+
+```
+
+The ideal k was 7 for all three models, so the different training sets did not impact the best boundary here. Below are summaries of the estimated feature importance for the ten most important features in each of these KNN models:
+
+```{r }
+orig_test_pred <- predict(knn1, primary_test_df |> select(-PH))
+orig_pred_rsq <- as.numeric(R2(orig_test_pred, primary_test_df |> select(PH),
+                               form = "traditional"))
+features <- colnames(primary_test_df |> select(-PH))
+feature_importance <- rep(0, length(features))
+names(feature_importance) <- features
+for (f in 1:length(features)){
+    test_x_shuffled <- primary_test_df |> select(-PH)
+    rows <- sample(nrow(test_x_shuffled))
+    test_x_shuffled[, f] <- test_x_shuffled[rows, f]
+    new_test_pred <- predict(knn1, test_x_shuffled)
+    new_pred_rsq <- as.numeric(R2(new_test_pred, primary_test_df |> select(PH),
+                                  form = "traditional"))
+    feature_importance[f] <- orig_pred_rsq - new_pred_rsq
+}
+feature_importance <- sort(feature_importance, decreasing = TRUE) |>
+    as.data.frame() |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model KNN:1 Importance")
+colnames(feature_importance) <-  cols
+knitr::kable(feature_importance, format = "simple")
+
+```
+
+```{r }
+orig_test_pred <- predict(knn2, secondary_test_df |> select(-PH))
+orig_pred_rsq <- as.numeric(R2(orig_test_pred, secondary_test_df |> select(PH),
+                               form = "traditional"))
+features <- colnames(secondary_test_df |> select(-PH))
+feature_importance <- rep(0, length(features))
+names(feature_importance) <- features
+for (f in 1:length(features)){
+    test_x_shuffled <- secondary_test_df |> select(-PH)
+    rows <- sample(nrow(test_x_shuffled))
+    test_x_shuffled[, f] <- test_x_shuffled[rows, f]
+    new_test_pred <- predict(knn2, test_x_shuffled)
+    new_pred_rsq <- as.numeric(R2(new_test_pred,
+                                  secondary_test_df |> select(PH),
+                                  form = "traditional"))
+    feature_importance[f] <- orig_pred_rsq - new_pred_rsq
+}
+feature_importance <- sort(feature_importance, decreasing = TRUE) |>
+    as.data.frame() |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model KNN:2 Importance")
+colnames(feature_importance) <-  cols
+knitr::kable(feature_importance, format = "simple")
+
+```
+
+```{r }
+orig_test_pred <- predict(knn3, tertiary_test_df |> select(-PH))
+orig_pred_rsq <- as.numeric(R2(orig_test_pred, tertiary_test_df |> select(PH),
+                               form = "traditional"))
+features <- colnames(tertiary_test_df |> select(-PH))
+feature_importance <- rep(0, length(features))
+names(feature_importance) <- features
+for (f in 1:length(features)){
+    test_x_shuffled <- tertiary_test_df |> select(-PH)
+    rows <- sample(nrow(test_x_shuffled))
+    test_x_shuffled[, f] <- test_x_shuffled[rows, f]
+    new_test_pred <- predict(knn3, test_x_shuffled)
+    new_pred_rsq <- as.numeric(R2(new_test_pred,
+                                  tertiary_test_df |> select(PH),
+                                  form = "traditional"))
+    feature_importance[f] <- orig_pred_rsq - new_pred_rsq
+}
+feature_importance <- sort(feature_importance, decreasing = TRUE) |>
+    as.data.frame() |>
+    rownames_to_column() |>
+    top_n(10)
+cols <- c("Predictor", "Model KNN:3 Importance")
+colnames(feature_importance) <-  cols
+knitr::kable(feature_importance, format = "simple")
+
+```
+
+Next we train three Support Vector Machine: Radial Basis (SVM: RB) models. (Note that factors always have to be one-hot encoded prior to building these models).
+
+```{r }
+mm1 <- model.matrix(~0+., data = primary_train_df |> select(-PH))
+svmRB1Tuned <- train(mm1, primary_train_df$PH,
+                   method = "svmRadial",
+                   preProc = c("center", "scale"),
+                   tuneLength = 14,
+                   trControl = trainControl(method = "cv"))
+mm2 <- model.matrix(~0+., data = secondary_train_df |> select(-PH))
+svmRB2Tuned <- train(mm2, secondary_train_df$PH,
+                   method = "svmRadial",
+                   preProc = c("center", "scale"),
+                   tuneLength = 14,
+                   trControl = trainControl(method = "cv"))
+mm3 <- model.matrix(~0+., data = tertiary_train_df |> select(-PH))
+svmRB3Tuned <- train(mm3, tertiary_train_df$PH,
+                   method = "svmRadial",
+                   preProc = c("center", "scale"),
+                   tuneLength = 14,
+                   trControl = trainControl(method = "cv"))
+
+```
+
+A summary of the ideal tuning parameters and Generalized R-Squared values for the three SVM:RB models is below:
+
+```{r }
+svm_mods <- c("Model SVM:RB:1", "Model SVM:RB:2", "Model SVM:RB:3")
+sigmas <- c(svmRB1Tuned$bestTune$sigma, svmRB2Tuned$bestTune$sigma, 
+            svmRB3Tuned$bestTune$sigma)
+cs <- c(svmRB1Tuned$bestTune$C, svmRB2Tuned$bestTune$C, 
+            svmRB3Tuned$bestTune$C)
+rsq <- c(svmRB1Tuned$results |> filter(C == svmRB1Tuned$bestTune$C) |> select(Rsquared) |> as.numeric(),
+svmRB2Tuned$results |> filter(C == svmRB2Tuned$bestTune$C) |> select(Rsquared) |> as.numeric(),
+svmRB3Tuned$results |> filter(C == svmRB3Tuned$bestTune$C) |> select(Rsquared) |> as.numeric())
+summ <- as.data.frame(cbind(svm_mods, round(sigmas, 4), cs, round(rsq, 4)))
+cols <- c("Model", "sigma", "C", "R-Squared")
+colnames(summ) <- cols
+knitr::kable(summ, format = "simple")
+
+```
+
+The ideal C was 8 for both **Model SVM:RB:2** and **Model SVM:RB:3**. Below are summaries of the estimated feature importance for the ten most important features in each of these SVM:RB models:
+
+**Model SVM:RB:1 Importance**
+
+```{r }
+y <- primary_train_df$PH
+names(y) <- "y"
+dat = cbind(primary_train_df |> select(-PH), y)
+svmRB1Fit <- fit(y~., data = dat, model = "svm",
+               kpar = list(sigma = .0196), C = 4)
+svmRB1.imp <- Importance(svmRB1Fit, data = dat)
+L = list(runs = 1,sen = t(svmRB1.imp$imp),
+         sresponses = svmRB1.imp$sresponses)
+sen_vec <- as.numeric(L[["sen"]])
+copy <- L
+delete <- c()
+for (i in 1:length(sen_vec)){
+    if (sen_vec[i] >= 0.045){
+        next
+    }else{
+        delete <- append(delete, i)
+    }
+}
+copy[["sen"]] <- t(as.matrix(copy[["sen"]][, -delete]))
+copy[["sresponses"]] <- copy[["sresponses"]][-delete]
+names <- c()
+for (i in 1:length(copy[["sresponses"]])){
+    n <- copy[["sresponses"]][[i]][["n"]]
+    names <- append(names, n)
+}
+mgraph(copy, graph = "IMP", leg = names, col = "gray",
+       PDF = "")
+
+```
+
+**Model SVM:RB:2 Importance**
+
+```{r }
+y <- secondary_train_df$PH
+names(y) <- "y"
+dat = cbind(secondary_train_df |> select(-PH), y)
+svmRB2Fit <- fit(y~., data = dat, model = "svm",
+               kpar = list(sigma = .0202), C = 8)
+svmRB2.imp <- Importance(svmRB2Fit, data = dat)
+L = list(runs = 1,sen = t(svmRB2.imp$imp),
+         sresponses = svmRB2.imp$sresponses)
+sen_vec <- as.numeric(L[["sen"]])
+copy <- L
+delete <- c()
+for (i in 1:length(sen_vec)){
+    if (sen_vec[i] >= 0.045){
+        next
+    }else{
+        delete <- append(delete, i)
+    }
+}
+copy[["sen"]] <- t(as.matrix(copy[["sen"]][, -delete]))
+copy[["sresponses"]] <- copy[["sresponses"]][-delete]
+names <- c()
+for (i in 1:length(copy[["sresponses"]])){
+    n <- copy[["sresponses"]][[i]][["n"]]
+    names <- append(names, n)
+}
+mgraph(copy, graph = "IMP", leg = names, col = "gray",
+       PDF = "")
+
+```
+
+**Model SVM:RB:3 Importance**
+
+```{r }
+y <- tertiary_train_df$PH
+names(y) <- "y"
+dat = cbind(tertiary_train_df |> select(-PH), y)
+svmRB3Fit <- fit(y~., data = dat, model = "svm",
+               kpar = list(sigma = .0202), C = 8)
+svmRB3.imp <- Importance(svmRB3Fit, data = dat)
+L = list(runs = 1,sen = t(svmRB3.imp$imp),
+         sresponses = svmRB3.imp$sresponses)
+sen_vec <- as.numeric(L[["sen"]])
+copy <- L
+delete <- c()
+for (i in 1:length(sen_vec)){
+    if (sen_vec[i] >= 0.045){
+        next
+    }else{
+        delete <- append(delete, i)
+    }
+}
+copy[["sen"]] <- t(as.matrix(copy[["sen"]][, -delete]))
+copy[["sresponses"]] <- copy[["sresponses"]][-delete]
+names <- c()
+for (i in 1:length(copy[["sresponses"]])){
+    n <- copy[["sresponses"]][[i]][["n"]]
+    names <- append(names, n)
+}
+mgraph(copy, graph = "IMP", leg = names, col = "gray",
+       PDF = "")
+
+```
+
+**TK Discuss Differences in Important Variables Among SVM Models**
+
+### Tree Models:
+
+Finally, we train three boosted tree models. 
+
+```{r warning = FALSE, message = FALSE}
+gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
+                       n.trees = seq(100, 1000, by = 50),
+                       shrinkage = c(0.01, 0.1),
+                       n.minobsinnode = 10)
+gbm1Tune <- train(primary_train_df |> select(-PH), primary_train_df$PH,
+                 method = "gbm",
+                 tuneGrid = gbmGrid,
+                 verbose = FALSE)
+gbm2Tune <- train(secondary_train_df |> select(-PH), secondary_train_df$PH,
+                 method = "gbm",
+                 tuneGrid = gbmGrid,
+                 verbose = FALSE)
+gbm3Tune <- train(tertiary_train_df |> select(-PH), tertiary_train_df$PH,
+                 method = "gbm",
+                 tuneGrid = gbmGrid,
+                 verbose = FALSE)
+
+```
+
+## Final Model Selection:
+
+We will select the final model by comparing the Predictive R-Squared and Root Mean Squared Error (RMSE) measures using the test data we held out from the primary, secondary, and tertiary datasets. For each test dataset, we will select the model with the lowest RMSE. From that reduced selection of models, we will select the least complex model, a determination that requires consideration of both the model itself and what changes were made to its underlying training data.
+
+## Final Model Evaluation:
+
+
