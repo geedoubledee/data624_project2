@@ -3,8 +3,8 @@ title: "DATA624 - Project 2"
 author: "Glen Dale Davis & Tora Mullings"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -32,6 +32,7 @@ library(MASS)
 select <- dplyr::select
 library(earth)
 library(rminer)
+library(writexl)
 
 ```
 
@@ -80,6 +81,7 @@ p0 <- main_df |>
     geom_text(data = annotations,
               aes(x = x, y = y, label = paste(label, x)),
               size = 4, fontface = "bold") +
+    labs(y = "Frequency") + 
     scale_x_continuous(limits = c(7.5, 9.5), breaks = seq(7.5, 9.5, 0.5)) +
     scale_y_continuous(limits = c(0, 350), breaks = seq(0, 350, 25))
 p0
@@ -99,7 +101,7 @@ main_df <- main_df |>
 
 ```
 
-We take a look at histograms for the numeric predictor variables, as well scatterplots of each numeric predictor and the response, in batches since there are so many of them.
+We take a look at histograms for the numeric predictor variables, as well as scatterplots of each numeric predictor and the response, in batches since there are so many of them.
 
 ```{r predictors_distributions1, warning = FALSE, message = FALSE}
 non_numeric <- c("BRAND_CODE")
@@ -325,7 +327,7 @@ p4a
 
 ```
 
-In the last batch of numeric predictors, we see that `AIR_PRESSURER` and `OXYGEN_FILLER` are right-skewed. The distributions for `ALCH_REL`, `BALLING_LVL`, and `PRESSURE_SETPOINT` are multimodal. `BOWL_SETPOINT` is left-skewed. `CARB_REL` is the only variable for which the distribution is nearly normal.
+In the last batch of numeric predictors, we see that `AIR_PRESSURER` and `OXYGEN_FILLER` are right-skewed. The distributions for `ALCH_REL`, `BALLING_LVL`, and `PRESSURE_SETPOINT` are multimodal. `BOWL_SETPOINT` is left-skewed. `CARB_REL` is the only variable for which the distribution is nearly normal, and that's debatable.
 
 ```{r scatterplots4, warning = FALSE, message = FALSE}
 sel <- c("PH", all_numeric_chunks[[4]])
@@ -410,7 +412,7 @@ p5
 
 `MFR`, `BRAND_CODE`, and `FILLER_SPEED` are the predictors with the most missing values, but many other predictors are missing values as well. We coerce `BRAND_CODE` to a factor and add a level for `NA` values to handle missingness for this categorical predictor. Then we look at the distribution of `PH` by `BRAND_CODE` level to determine whether there are differences in variation between groups and outliers within groups.
 
-```{r brand_code}
+```{r brand_code, warning = FALSE, message = FALSE}
 main_df <- main_df |>
     mutate(BRAND_CODE = factor(BRAND_CODE, exclude = NULL))
 palette <- brewer.pal(n = 12, name = "Paired")
@@ -525,7 +527,7 @@ When creating models that are not robust to collinearity later, we will definite
 
 ## Data Preparation:
 
-To create two versions of the data, one in which missing numeric values have been imputed and one in which observations with missing numeric values have been deleted, we first set a seed and split the data into train and test sets. 
+To create three versions of the data, one in which missing numeric values have been imputed, one in which observations with missing numeric values have been deleted, and one in which observations with missing numeric values have been imputed and skewed predictors have been transformed, we first set a seed and split the data into train and test sets. 
 
 ```{r train_test_split}
 set.seed(417)
@@ -563,7 +565,7 @@ p10
 
 The variables with variance inflation factors greater than five are `BALLING_LVL`, `BALLING`, `ALCH_REL`, `CARB_PRESSURE`, and `CARB_TEMP`. We remove `ALCH_REL` and `BALLING` from variable importance consideration for imputation because the information these variables provide is largely covered by `BALLING_LVL`, and we remove `CARB_TEMP` from variable importance consideration for imputation in favor of `CARB_PRESSURE`for the same reason.
 
-```{r impute_missing_values1}
+```{r impute_missing_values1, warning = FALSE, message = FALSE}
 rf_model1 <- randomForest(PH ~ . - ALCH_REL - BALLING - CARB_TEMP, data = train_df,
                           importance = TRUE,
                           ntree = 1000,
@@ -712,7 +714,7 @@ summary(lm1)
 
 ```
 
-The Adjusted R-Squared increased very slightly to 0.4131. 
+The Adjusted R-Squared did not change.
 
 Next we build **Model LM:2**, a linear model that includes all predictors and uses the secondary training set (in which observations with missing numeric values have been deleted). The Adjusted R-Squared for the full model is:
 
@@ -749,11 +751,9 @@ summary(lm3)
 
 ```
 
-The Adjusted R-Squared increased very slightly to 0.4165. 
+The Adjusted R-Squared increased very slightly to 0.416, but `BOWL_SETPOINT_sq` is no longer significant. We leave it in. 
 
-Looking at the significant predictors in the three linear models, there are some differences to note. `FILL_OUNCES` was deemed significant in only **Model LM:2**, and `PSC` and `ALCH_REL` was deemed significant in only **Model LM:1**.
-
-**TK: Any notes on Model LM:3?*
+Looking at the significant predictors in the three linear models, there are some differences to note. `FILL_OUNCES` was deemed significant in only **Model LM:2**, and `PSC` and `ALCH_REL` were deemed significant in only **Model LM:1**.
 
 We examine diagnostic plots for the three linear models. 
 
@@ -767,7 +767,7 @@ plot(lm3, 1, main = "Model LM:3")
 
 There's a bit of a sigmoid pattern in the red line in the Residuals vs. Fitted Values plots for all three linear models, suggesting they share a fit issue. 
 
-```{r lm_diagnostics1}
+```{r lm_diagnostics2}
 par(mfrow = c(1, 3))
 plot(lm1, 2, main = "Model LM:1")
 plot(lm2, 2, main = "Model LM:2")
@@ -777,7 +777,7 @@ plot(lm3, 2, main = "Model LM:3")
 
 The Q-Q plots diverge from the normal line at the low-end for all three linear models. 
 
-```{r lm_diagnostics1}
+```{r lm_diagnostics3}
 par(mfrow = c(1, 3))
 plot(lm1, 5, main = "Model LM:1")
 plot(lm2, 5, main = "Model LM:2")
@@ -897,7 +897,7 @@ knitr::kable(summ, format = "simple")
 
 And here are summaries of the estimated feature importance for the ten most important features in each of these MARS models:
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 mars1_feature_importance <- varImp(mars1, method = "gcv")
 mars1_feature_importance <- mars1_feature_importance$importance |>
     arrange(desc(Overall)) |>
@@ -909,7 +909,7 @@ knitr::kable(mars1_feature_importance, format = "simple")
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 mars2_feature_importance <- varImp(mars2, method = "gcv")
 mars2_feature_importance <- mars2_feature_importance$importance |>
     arrange(desc(Overall)) |>
@@ -921,7 +921,7 @@ knitr::kable(mars2_feature_importance, format = "simple")
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 mars3_feature_importance <- varImp(mars3, method = "gcv")
 mars3_feature_importance <- mars3_feature_importance$importance |>
     arrange(desc(Overall)) |>
@@ -932,8 +932,6 @@ colnames(mars3_feature_importance) <- cols
 knitr::kable(mars3_feature_importance, format = "simple")
 
 ```
-
-**TK: Compare Differences**
 
 Next, we tune three K Nearest Neighbors (KNN) models.
 
@@ -962,7 +960,7 @@ knitr::kable(summ, format = "simple")
 
 The ideal k was 7 for all three models, so the different training sets did not impact the best boundary here. Below are summaries of the estimated feature importance for the ten most important features in each of these KNN models:
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 orig_test_pred <- predict(knn1, primary_test_df |> select(-PH))
 orig_pred_rsq <- as.numeric(R2(orig_test_pred, primary_test_df |> select(PH),
                                form = "traditional"))
@@ -988,7 +986,7 @@ knitr::kable(feature_importance, format = "simple")
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 orig_test_pred <- predict(knn2, secondary_test_df |> select(-PH))
 orig_pred_rsq <- as.numeric(R2(orig_test_pred, secondary_test_df |> select(PH),
                                form = "traditional"))
@@ -1015,7 +1013,7 @@ knitr::kable(feature_importance, format = "simple")
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 orig_test_pred <- predict(knn3, tertiary_test_df |> select(-PH))
 orig_pred_rsq <- as.numeric(R2(orig_test_pred, tertiary_test_df |> select(PH),
                                form = "traditional"))
@@ -1066,7 +1064,7 @@ svmRB3Tuned <- train(mm3, tertiary_train_df$PH,
 
 ```
 
-A summary of the ideal tuning parameters and Generalized R-Squared values for the three SVM:RB models is below:
+A summary of the ideal tuning parameters and R-Squared values for the three SVM:RB models is below:
 
 ```{r }
 svm_mods <- c("Model SVM:RB:1", "Model SVM:RB:2", "Model SVM:RB:3")
@@ -1084,7 +1082,7 @@ knitr::kable(summ, format = "simple")
 
 ```
 
-The ideal C was 8 for both **Model SVM:RB:2** and **Model SVM:RB:3**. Below are summaries of the estimated feature importance for the ten most important features in each of these SVM:RB models:
+The ideal C was 8 for all three SVM models. Below are summaries of the estimated feature importance for the ten most important features in each of these SVM:RB models:
 
 **Model SVM:RB:1 Importance**
 
@@ -1093,7 +1091,7 @@ y <- primary_train_df$PH
 names(y) <- "y"
 dat = cbind(primary_train_df |> select(-PH), y)
 svmRB1Fit <- fit(y~., data = dat, model = "svm",
-               kpar = list(sigma = .0196), C = 4)
+               kpar = list(sigma = .02), C = 8)
 svmRB1.imp <- Importance(svmRB1Fit, data = dat)
 L = list(runs = 1,sen = t(svmRB1.imp$imp),
          sresponses = svmRB1.imp$sresponses)
@@ -1126,7 +1124,7 @@ y <- secondary_train_df$PH
 names(y) <- "y"
 dat = cbind(secondary_train_df |> select(-PH), y)
 svmRB2Fit <- fit(y~., data = dat, model = "svm",
-               kpar = list(sigma = .0202), C = 8)
+               kpar = list(sigma = .0203), C = 8)
 svmRB2.imp <- Importance(svmRB2Fit, data = dat)
 L = list(runs = 1,sen = t(svmRB2.imp$imp),
          sresponses = svmRB2.imp$sresponses)
@@ -1159,7 +1157,7 @@ y <- tertiary_train_df$PH
 names(y) <- "y"
 dat = cbind(tertiary_train_df |> select(-PH), y)
 svmRB3Fit <- fit(y~., data = dat, model = "svm",
-               kpar = list(sigma = .0202), C = 8)
+               kpar = list(sigma = .0167), C = 8)
 svmRB3.imp <- Importance(svmRB3Fit, data = dat)
 L = list(runs = 1,sen = t(svmRB3.imp$imp),
          sresponses = svmRB3.imp$sresponses)
@@ -1185,36 +1183,229 @@ mgraph(copy, graph = "IMP", leg = names, col = "gray",
 
 ```
 
-**TK Discuss Differences in Important Variables Among SVM Models**
-
 ### Tree Models:
 
-Finally, we train three boosted tree models. 
+Finally, we train three single tree regression models.
 
 ```{r warning = FALSE, message = FALSE}
-gbmGrid <- expand.grid(interaction.depth = seq(1, 7, by = 2),
-                       n.trees = seq(100, 1000, by = 50),
-                       shrinkage = c(0.01, 0.1),
-                       n.minobsinnode = 10)
-gbm1Tune <- train(primary_train_df |> select(-PH), primary_train_df$PH,
-                 method = "gbm",
-                 tuneGrid = gbmGrid,
-                 verbose = FALSE)
-gbm2Tune <- train(secondary_train_df |> select(-PH), secondary_train_df$PH,
-                 method = "gbm",
-                 tuneGrid = gbmGrid,
-                 verbose = FALSE)
-gbm3Tune <- train(tertiary_train_df |> select(-PH), tertiary_train_df$PH,
-                 method = "gbm",
-                 tuneGrid = gbmGrid,
-                 verbose = FALSE)
+rpart1Tune <- train(primary_train_df |> select(-PH), primary_train_df$PH,
+                   method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+rpart2Tune <- train(secondary_train_df |> select(-PH), secondary_train_df$PH,
+                   method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+rpart3Tune <- train(tertiary_train_df |> select(-PH), tertiary_train_df$PH,
+                   method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+
+```
+
+A summary of the best maxdepth and R-Squared for each of these tree models is below:
+
+```{r }
+tree_mods <- c("Model Tree:1", "Model Tree:2", "Model Tree:3")
+maxdepth <- c(rpart1Tune$bestTune$maxdepth, rpart2Tune$bestTune$maxdepth,
+              rpart3Tune$bestTune$maxdepth)
+rsq <- c(rpart1Tune$results |> filter(maxdepth == rpart1Tune$bestTune$maxdepth) |> select(Rsquared) |> as.numeric(),
+         rpart2Tune$results |> filter(maxdepth == rpart2Tune$bestTune$maxdepth) |> select(Rsquared) |> as.numeric(),
+         rpart3Tune$results |> filter(maxdepth == rpart3Tune$bestTune$maxdepth) |> select(Rsquared) |> as.numeric())
+summ <- as.data.frame(cbind(tree_mods, maxdepth, round(rsq, 4)))
+cols <- c("Model", "maxdepth", "R-Squared")
+colnames(summ) <- cols
+knitr::kable(summ, format = "simple")
+
+```
+
+All three tree models had a best maxdepth of 11. Below are summaries of the estimated feature importance for the ten most important features in each of these tree models:
+
+```{r warning = FALSE, message = FALSE}
+feature_importance <- varImp(rpart1Tune)
+feature_importance <- feature_importance$importance |>
+    rownames_to_column()
+feature_importance <- feature_importance |>
+    arrange(desc(Overall)) |>
+    top_n(10)
+cols <- c("Predictor", "Model Tree:1 Importance")
+colnames(feature_importance) <- cols
+knitr::kable(feature_importance, format = "simple")
+
+```
+
+```{r warning = FALSE, message = FALSE}
+feature_importance <- varImp(rpart2Tune)
+feature_importance <- feature_importance$importance |>
+    rownames_to_column()
+feature_importance <- feature_importance |>
+    arrange(desc(Overall)) |>
+    top_n(10)
+cols <- c("Predictor", "Model Tree:2 Importance")
+colnames(feature_importance) <- cols
+knitr::kable(feature_importance, format = "simple")
+
+```
+
+```{r warning = FALSE, message = FALSE}
+feature_importance <- varImp(rpart3Tune)
+feature_importance <- feature_importance$importance |>
+    rownames_to_column()
+feature_importance <- feature_importance |>
+    arrange(desc(Overall)) |>
+    top_n(10)
+cols <- c("Predictor", "Model Tree:3 Importance")
+colnames(feature_importance) <- cols
+knitr::kable(feature_importance, format = "simple")
 
 ```
 
 ## Final Model Selection:
 
-We will select the final model by comparing the Predictive R-Squared and Root Mean Squared Error (RMSE) measures using the test data we held out from the primary, secondary, and tertiary datasets. For each test dataset, we will select the model with the lowest RMSE. From that reduced selection of models, we will select the least complex model, a determination that requires consideration of both the model itself and what changes were made to its underlying training data.
+We will select the final model by looking at the models' Predictive R-Squared and Root Mean Squared Error (RMSE) measures using the test data we held out from the primary, secondary, and tertiary datasets. For each test dataset, we will select the model with the lowest RMSE (and hopefully the highest Predictive R-Squared). From that reduced selection of models, we will select the most appropriate model for the evaluation data, a determination that requires consideration of both the model itself and what changes were made to its underlying training data.
+
+Below is a test data performance summary for all models operating on the primary dataset:
+
+```{r }
+test_pred1 <- predict(lm1, primary_test_df |> select(-PH))
+test_rsq1 <- as.numeric(R2(test_pred1, primary_test_df$PH, form = "traditional"))
+test_rmse1 <- as.numeric(RMSE(test_pred1, primary_test_df$PH))
+row1 <- cbind("Model LM:1",
+              as.character(round(test_rsq1, 4)),
+              as.character(round(test_rmse1, 4)))
+test_pred2 <- predict(mars1, primary_test_df |> select(-PH))
+test_rsq2 <- as.numeric(R2(test_pred2, primary_test_df$PH, form = "traditional"))
+test_rmse2 <- as.numeric(RMSE(test_pred2, primary_test_df$PH))
+row2 <- cbind("Model MARS:1",
+              as.character(round(test_rsq2, 4)),
+              as.character(round(test_rmse2, 4)))
+test_pred3 <- predict(knn1, primary_test_df |> select(-PH))
+test_rsq3 <- as.numeric(R2(test_pred3, primary_test_df$PH, form = "traditional"))
+test_rmse3 <- as.numeric(RMSE(test_pred3, primary_test_df$PH))
+row3 <- cbind("Model KNN:1",
+              as.character(round(test_rsq3, 4)),
+              as.character(round(test_rmse3, 4)))
+mm_test <- model.matrix(~0+., data = primary_test_df |> select(-PH))
+test_pred4 <- predict(svmRB1Tuned, mm_test)
+test_rsq4 <- as.numeric(R2(test_pred4, primary_test_df$PH, form = "traditional"))
+test_rmse4 <- as.numeric(RMSE(test_pred4, primary_test_df$PH))
+row4 <- cbind("Model SVM:RB:1",
+              as.character(round(test_rsq4, 4)),
+              as.character(round(test_rmse4, 4)))
+test_pred5 <- predict(rpart1Tune, primary_test_df |> select(-PH))
+test_rsq5 <- as.numeric(R2(test_pred5, primary_test_df$PH, form = "traditional"))
+test_rmse5 <- as.numeric(RMSE(test_pred5, primary_test_df$PH))
+row5 <- cbind("Model Tree:1",
+              as.character(round(test_rsq5, 4)),
+              as.character(round(test_rmse5, 4)))
+tbl <- as.data.frame(rbind(row1, row2, row3, row4, row5))
+cols <- c("Model", "Predictive R-Squared", "RMSE")
+colnames(tbl) <- cols
+knitr::kable(tbl, format = "simple")
+
+```
+
+**Model SVM:RB:1** has the lowest RMSE and highest Predictive R-Squared on the primary dataset.
+
+Below is a test data performance summary for all models operating on the secondary dataset:
+
+```{r }
+test_pred1 <- predict(lm2, secondary_test_df |> select(-PH))
+test_rsq1 <- as.numeric(R2(test_pred1, secondary_test_df$PH, form = "traditional"))
+test_rmse1 <- as.numeric(RMSE(test_pred1, secondary_test_df$PH))
+row1 <- cbind("Model LM:2",
+              as.character(round(test_rsq1, 4)),
+              as.character(round(test_rmse1, 4)))
+test_pred2 <- predict(mars2, secondary_test_df |> select(-PH))
+test_rsq2 <- as.numeric(R2(test_pred2, secondary_test_df$PH, form = "traditional"))
+test_rmse2 <- as.numeric(RMSE(test_pred2, secondary_test_df$PH))
+row2 <- cbind("Model MARS:2",
+              as.character(round(test_rsq2, 4)),
+              as.character(round(test_rmse2, 4)))
+test_pred3 <- predict(knn2, secondary_test_df |> select(-PH))
+test_rsq3 <- as.numeric(R2(test_pred3, secondary_test_df$PH, form = "traditional"))
+test_rmse3 <- as.numeric(RMSE(test_pred3, secondary_test_df$PH))
+row3 <- cbind("Model KNN:2",
+              as.character(round(test_rsq3, 4)),
+              as.character(round(test_rmse3, 4)))
+mm_test <- model.matrix(~0+., data = secondary_test_df |> select(-PH))
+test_pred4 <- predict(svmRB2Tuned, mm_test)
+test_rsq4 <- as.numeric(R2(test_pred4, secondary_test_df$PH, form = "traditional"))
+test_rmse4 <- as.numeric(RMSE(test_pred4, secondary_test_df$PH))
+row4 <- cbind("Model SVM:RB:2",
+              as.character(round(test_rsq4, 4)),
+              as.character(round(test_rmse4, 4)))
+test_pred5 <- predict(rpart2Tune, secondary_test_df |> select(-PH))
+test_rsq5 <- as.numeric(R2(test_pred5, secondary_test_df$PH, form = "traditional"))
+test_rmse5 <- as.numeric(RMSE(test_pred5, secondary_test_df$PH))
+row5 <- cbind("Model Tree:2",
+              as.character(round(test_rsq5, 4)),
+              as.character(round(test_rmse5, 4)))
+tbl <- as.data.frame(rbind(row1, row2, row3, row4, row5))
+cols <- c("Model", "Predictive R-Squared", "RMSE")
+colnames(tbl) <- cols
+knitr::kable(tbl, format = "simple")
+
+```
+
+**Model SVM:RB:2** has the lowest RMSE and highest Predictive R-Squared on the secondary dataset. **Model MARS:2** performs particularly poorly on this dataset. 
+
+```{r }
+test_pred1 <- predict(lm3, tertiary_test_df |> select(-PH))
+test_rsq1 <- as.numeric(R2(test_pred1, tertiary_test_df$PH, form = "traditional"))
+test_rmse1 <- as.numeric(RMSE(test_pred1, tertiary_test_df$PH))
+row1 <- cbind("Model LM:3",
+              as.character(round(test_rsq1, 4)),
+              as.character(round(test_rmse1, 4)))
+test_pred2 <- predict(mars3, tertiary_test_df |> select(-PH))
+test_rsq2 <- as.numeric(R2(test_pred2, tertiary_test_df$PH, form = "traditional"))
+test_rmse2 <- as.numeric(RMSE(test_pred2, tertiary_test_df$PH))
+row2 <- cbind("Model MARS:3",
+              as.character(round(test_rsq2, 4)),
+              as.character(round(test_rmse2, 4)))
+test_pred3 <- predict(knn3, tertiary_test_df |> select(-PH))
+test_rsq3 <- as.numeric(R2(test_pred3, tertiary_test_df$PH, form = "traditional"))
+test_rmse3 <- as.numeric(RMSE(test_pred3, tertiary_test_df$PH))
+row3 <- cbind("Model KNN:3",
+              as.character(round(test_rsq3, 4)),
+              as.character(round(test_rmse3, 4)))
+mm_test <- model.matrix(~0+., data = tertiary_test_df |> select(-PH))
+test_pred4 <- predict(svmRB3Tuned, mm_test)
+test_rsq4 <- as.numeric(R2(test_pred4, tertiary_test_df$PH, form = "traditional"))
+test_rmse4 <- as.numeric(RMSE(test_pred4, tertiary_test_df$PH))
+row4 <- cbind("Model SVM:RB:3",
+              as.character(round(test_rsq4, 4)),
+              as.character(round(test_rmse4, 4)))
+test_pred5 <- predict(rpart3Tune, tertiary_test_df |> select(-PH))
+test_rsq5 <- as.numeric(R2(test_pred5, tertiary_test_df$PH, form = "traditional"))
+test_rmse5 <- as.numeric(RMSE(test_pred5, tertiary_test_df$PH))
+row5 <- cbind("Model Tree:3",
+              as.character(round(test_rsq5, 4)),
+              as.character(round(test_rmse5, 4)))
+tbl <- as.data.frame(rbind(row1, row2, row3, row4, row5))
+cols <- c("Model", "Predictive R-Squared", "RMSE")
+colnames(tbl) <- cols
+knitr::kable(tbl, format = "simple")
+
+```
+
+**Model SVM:RB:3** has the lowest RMSE and highest Predictive R-Squared on the tertiary dataset.
+
+While **Model SVM:RB:2** has the lowest RMSE (and the highest Predictive R-Squared), its underlying data uses only complete cases. Since the evaluation data contains `NA` values, and SVM models can't handle missing predictor data, we choose the second best performer: **Model SVM:RB:1**. It uses imputed data, and we can impute the missing values in the evaluation data the same way so that `PH` can be predicted for all observations.
 
 ## Final Model Evaluation:
 
+We make our `PH` predictions using **Model SVM:RB:1** and save the predictions made to an Excel file: "Student_Evaluation_w_Predictions.xlsx."
 
+```{r }
+missing_val_cols <- find_cols_na(eval_df |> select(-PH))
+eval_df <- eval_df |>
+    mutate(BRAND_CODE = factor(BRAND_CODE, exclude = NULL)) |>
+    VIM::kNN(variable = missing_val_cols, k = 15, dist_var = dist_vars,
+             weights = wts, numFun = median, imp_var = FALSE)
+mm_pred <- model.matrix(~0+., data = eval_df |> select(-PH))
+eval_df <- eval_df |>
+    mutate(PH = predict(svmRB1Tuned, mm_pred))
+write_xlsx(eval_df, "Student_Evaluation_w_Predictions.xlsx")
+
+```
